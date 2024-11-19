@@ -44,10 +44,11 @@ async function getTraffic(cookie) {
       headers: { Cookie: cookie }
     });
     const html = res.data;
-    const todayUsed = html.match(/今日已用：(.*?)<\/span>/)?.[1] || '获取失败';
-    const monthUsed = html.match(/本月已用：(.*?)<\/span>/)?.[1] || '获取失败';
-    const remain = html.match(/剩余流量：(.*?)<\/span>/)?.[1] || '获取失败';
-    return [`今日已用：${todayUsed}`, `本月已用：${monthUsed}`, `剩余流量：${remain}`];
+    const todayUsed = html.match(/今日已用\s*[:：]\s*(.*?)<\/li>/)?.[1] || '获取失败';
+    // const monthUsed = html.match(/本月已用\s*[:：]\s*(.*?)<\/li>/)?.[1] || '获取失败';
+    const remain = html.match(/>(.*?)<\/span>"?\s*([GM]B)/)?.slice(1,3).join("") || '获取失败';
+    // return [`今日已用：${todayUsed}`, `本月已用：${monthUsed}`, `剩余流量：${remain}`];
+    return [`今日已用：${todayUsed}`, `剩余流量：${remain}`];
   } catch {
     return ['获取流量信息失败'];
   }

@@ -1,5 +1,5 @@
 const axios = require('axios');
-
+const $ = new Env("IKUN自动签到");
 // 配置
 const BASE_URL = 'https://ikuuu.one';
 const LOGIN_URL = `${BASE_URL}/auth/login`;

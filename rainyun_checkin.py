@@ -2,8 +2,8 @@ import requests
 import json
 
 # API信息
-api_key = '您的雨云API密钥'
-pushplus_token = '您的PushPlus Token'
+api_key = 'FO8oXnHqrtc9TKss0KfJz6hIkStI29UK'
+pushplus_token = 'cfedf17083ba4a5d8dc824a85eed7224'
 
 # 调试信息
 print(f"API密钥长度: {len(api_key)}")

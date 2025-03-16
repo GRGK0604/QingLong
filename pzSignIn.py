@@ -8,8 +8,18 @@ import re
 from datetime import datetime
 
 import httpx
+from toolz import curry  # We import curry from toolz to create a print function
 
-from fn_print import fn_print
+# Define a replacement for fn_print using toolz and standard Python
+@curry
+def log_message(message):
+    """Replacement for fn_print using toolz"""
+    print(message)
+    return message
+
+# Rename for compatibility with existing code
+fn_print = log_message
+
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 

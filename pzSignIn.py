@@ -9,7 +9,6 @@ from datetime import datetime
 
 import httpx
 
-from toolz import toolz  # 替换原来的 fn_print 导入
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 
@@ -32,14 +31,14 @@ class PzSignIn:
             )
             response_json = response.json()
         except Exception as e:
-            toolz.error(e)  # 使用 toolz.error 替代 fn_print
-            toolz.error(response.text)
+            print(e)
+            print(response.text)
         token = response_json["data"]['token']
         if token is not None:
-            toolz.info("=" * 30 + f"登录成功，开始执行签到" + "=" * 30)  # 使用 toolz.info 替代 fn_print
+            print("=" * 30 + f"登录成功，开始执行签到" + "=" * 30)
             self.client.headers["Authorization"] = "Bearer " + token
         else:
-            toolz.error("登录失败")  # 使用 toolz.error 替代 fn_print
+            print("登录失败")
             exit()
 
     def get_balance(self):
@@ -61,17 +60,17 @@ class PzSignIn:
             "/home/userWallet-receive"
         ).json()
         if response["status"] == 200 and response['data'] == '领取成功':
-            toolz.info("签到成功")  # 使用 toolz.info 替代 fn_print
-            toolz.info("=" * 100)  # 使用 toolz.info 替代 fn_print
+            print("签到成功")
+            print("=" * 100)
             balance = self.get_balance()
-            toolz.info("当前账户余额： " + balance)  # 使用 toolz.info 替代 fn_print
+            print("当前账户余额： " + balance)
         elif response["code"] == -1:
             balance = self.get_balance()
-            toolz.warning(response["message"])  # 使用 toolz.warning 替代 fn_print
-            toolz.warning(f"签到失败，{response['message']}\n当前账户余额：{balance}")  # 使用 toolz.warning 替代 fn_print
+            print(response["message"])
+            print(f"签到失败，{response['message']}\n当前账户余额：{balance}")
         else:
-            toolz.error("签到失败！")  # 使用 toolz.error 替代 fn_print
-            toolz.error(response)  # 使用 toolz.error 替代 fn_print
+            print("签到失败！")
+            print(response) 
 
 
 if __name__ == '__main__':

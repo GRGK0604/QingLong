@@ -1,5 +1,5 @@
 # -*- coding=UTF-8 -*-
-# @Project          QL_TimingScript
+# @Project          QingLong
 # @fileName         tclx.py
 # @author           Echo
 # @EditTime         2025/3/14

@@ -1,5 +1,5 @@
 # -*- coding=UTF-8 -*-
-# @Project          QL_TimingScript
+# @Project          QingLong
 # @fileName         pzSignIn.py
 # @author           Echo
 # @EditTime         2024/9/13

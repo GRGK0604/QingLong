@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 # -------------------------------
-# @Author : github@arvinsblog https://github.com/arvinsblog/deepsea
+# @Author : https://github.com/GRGK0604/QingLong
 # @Time : 2024-10-1 13:10:56
 # 收集和修复能用的脚本
 # -------------------------------

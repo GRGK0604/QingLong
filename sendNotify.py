@@ -437,22 +437,6 @@ def serverJSecond(title: str, content: str) -> None:
         print(f'serverJ SECOND推送失败！错误码：{response["message"]}')
 
 
-def serverJMy(title: str, content: str) -> None:
-    if not push_config.get("PUSH_KEY_MY"):
-        print("serverJ My服务的 PUSH_KEY_MY 未设置!!\n取消推送")
-        return
-    data = {"text": title, "desp": content}
-    url = f'https://sctapi.ftqq.com/{push_config.get("PUSH_KEY_MY")}.send'
-
-    response = requests.post(url, data=data).json()
-
-    if response.get("errno") == 0 or response.get("code") == 0:
-        print("serverJ My推送成功！")
-        serverJSecond(title, content)
-    else:
-        print(f'serverJ My推送失败！错误码：{response["message"]}')
-
-
 def push_me(title: str, content: str, msg_type: str) -> None:
     if not push_config.get("PUSH_ME_KEY"):
         print("pushMe服务的 PUSH_ME_KEY 未设置!!\n取消推送")

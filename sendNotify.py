@@ -5,24 +5,18 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import sys
 from pathlib import Path
 import threading
 import time
 import urllib.parse
+from typing import *
 
 import requests
 
-# 添加对 .env 文件的支持
-try:
-    from dotenv import load_dotenv
-
-    # 优先尝试加载 .env 文件
-    env_path = Path(__file__).parent / '.env'
-    load_dotenv(env_path)
-except ImportError:
-    print("提示: 可以安装 python-dotenv 来使用 .env 文件功能")
-    pass
+# 全局变量用于 fn_print 函数
+all_print_list = []
 
 # 原先的 print 函数和主线程的锁
 _print = print
@@ -35,13 +29,56 @@ def is_product_env():
     return IS_LOCAL_DEV != 'true'
 
 
+def fn_print(*args, sep=' ', end='\n', **kwargs):
+    """
+    自定义打印函数，将输出保存到全局列表中
+    """
+    global all_print_list
+    output = ""
+    # 构建输出字符串
+    for index, arg in enumerate(args):
+        if index == len(args) - 1:
+            output += str(arg)
+            continue
+        output += str(arg) + sep
+    output = output + end
+    all_print_list.append(output)
+    # 调用内置的 print 函数打印字符串
+    _print(*args, sep=sep, end=end, **kwargs)
+
+
 # 定义新的 print 函数
 def print(text, *args, **kw):
     """
     使输出有序进行，不出现多线程同一时间输出导致错乱的问题。
     """
     with mutex:
-        _print(text, *args, **kw)
+        fn_print(text, *args, **kw)
+
+
+def get_env(env_var, separator):
+    """
+    获取环境变量，支持分隔符分割
+    """
+    if env_var in os.environ:
+        return re.split(separator, os.environ.get(env_var))
+    else:
+        try:
+            from dotenv import load_dotenv, find_dotenv
+            # 尝试加载 .env 文件
+            load_dotenv(find_dotenv())
+            if env_var in os.environ:
+                return re.split(separator, os.environ.get(env_var))
+            else:
+                print(f"未找到{env_var}变量.")
+                return []
+        except ImportError:
+            print("提示: 可以安装 python-dotenv 来使用 .env 文件功能")
+            if env_var in os.environ:
+                return re.split(separator, os.environ.get(env_var))
+            else:
+                print(f"未找到{env_var}变量.")
+                return []
 
 
 # 通知服务

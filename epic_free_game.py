@@ -85,7 +85,7 @@ def notify_markdown(games: dict):
     ![{game['title']}]({images[game['title']]})
 
 '''
-    sendNotify.serverJMy("Epic 每周限免", content)
+    sendNotify.serverJ("Epic 每周限免", content)
     # with open(filename, 'w', encoding='utf-8') as f:
     #     f.write(content)
 

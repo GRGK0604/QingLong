@@ -1,4 +1,3 @@
-# 当前脚本来自于http://script.345yun.cn脚本库下载！
 import hashlib
 import json
 import os
@@ -640,4 +639,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-# 当前脚本来自于http://script.345yun.cn脚本库下载！

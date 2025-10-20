@@ -29,17 +29,18 @@ Cookie必需字段：
 - XSRF-TOKEN: CSRF防护令牌（必需）
 
 单账号配置示例：
-export LEAFLOW_ACCOUNTS="leaflow_session=xxx; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy; XSRF-TOKEN=zzz"
+export LEAFLOW_ACCOUNTS="leaflow_session=eyJpdiI6IjEyMzQ1Njc4OTAi...;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=eyJpdiI6IjEyMzQ1Njc4OTAi...;XSRF-TOKEN=eyJpdiI6IjEyMzQ1Njc4OTAi..."
 
 多账号配置示例（使用&分隔）：
-export LEAFLOW_ACCOUNTS="leaflow_session=xxx1; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy1; XSRF-TOKEN=zzz1&leaflow_session=xxx2; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy2; XSRF-TOKEN=zzz2"
+export LEAFLOW_ACCOUNTS="leaflow_session=xxx1;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy1;XSRF-TOKEN=zzz1&leaflow_session=xxx2;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy2;XSRF-TOKEN=zzz2"
 
 多账号配置示例（使用换行符分隔，推荐）：
-export LEAFLOW_ACCOUNTS="leaflow_session=xxx1; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy1; XSRF-TOKEN=zzz1
-leaflow_session=xxx2; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy2; XSRF-TOKEN=zzz2"
+export LEAFLOW_ACCOUNTS="leaflow_session=xxx1;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy1;XSRF-TOKEN=zzz1
+leaflow_session=xxx2;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy2;XSRF-TOKEN=zzz2"
 
 注意事项：
 - 每个账号的Cookie必须包含完整的三个字段
+- Cookie格式：字段名=值，多个字段用分号;直接连接（不要空格）
 - Cookie值通常很长，请完整复制，不要遗漏任何字符
 - 多账号配置时，建议使用换行符分隔，更清晰易读
 """

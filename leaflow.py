@@ -1,58 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-new Env('LeafLow签到');
 cron: 0 9 * * *
-const $ = new Env('LeafLow签到');
+new Env('LeafLow签到');
 """
 
 """
 LeafLow Token-Based Check-in Script for QingLong Panel
-青龙面板 - LeafLow签到脚本
+青龙面板 - LeafLow 自动签到脚本
 
 环境变量配置说明：
-LEAFLOW_ACCOUNTS: 账号配置，支持多账号，格式如下：
-  单账号: cookie1
-  多账号: cookie1&cookie2&cookie3
-  或使用换行符分隔: cookie1\ncookie2\ncookie3
+LEAFLOW_TOKENS: 多账号token配置，使用&分隔多个账号
+格式1 (仅Cookie): cookie1&cookie2&cookie3
+格式2 (Cookie+Headers): cookie1|header1&cookie2|header2
+格式3 (JSON格式): {"cookies":{"name":"value"},"headers":{"Authorization":"Bearer xxx"}}
 
-Cookie获取方法：
-1. 浏览器登录 https://leaflow.net
-2. 按F12打开开发者工具
-3. 在Network标签页找到请求
-4. 在Request Headers中找到Cookie字段
-5. 复制完整的Cookie值（必须包含以下三个字段）
+示例：
+export LEAFLOW_TOKENS='cookie1&cookie2'
+export LEAFLOW_TOKENS='cookie1|Authorization: Bearer xxx&cookie2'
 
-Cookie格式（纯值格式，用分号分隔）：
-xxx;yyy;zzz
-
-按顺序对应三个Cookie字段的值：
-1. leaflow_session的值
-2. remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d的值
-3. XSRF-TOKEN的值
-
-单账号配置示例：
-export LEAFLOW_ACCOUNTS="eyJpdiI6IjEyMzQ1Njc4OTAi...;eyJpdiI6IjEyMzQ1Njc4OTAi...;eyJpdiI6IjEyMzQ1Njc4OTAi..."
-
-多账号配置示例（使用&分隔）：
-export LEAFLOW_ACCOUNTS="xxx1;yyy1;zzz1&xxx2;yyy2;zzz2"
-
-多账号配置示例（使用换行符分隔，推荐）：
-export LEAFLOW_ACCOUNTS="xxx1;yyy1;zzz1
-xxx2;yyy2;zzz2
-xxx3;yyy3;zzz3"
-
-注意事项：
-- 每个账号必须包含完整的三个Cookie值
-- 三个值用分号;直接连接（不要空格），按顺序对应三个字段
-- Cookie值通常很长，请完整复制，不要遗漏任何字符
-- 多账号配置时，建议使用换行符分隔，更清晰易读
+使用方法：
+1. 手动在浏览器中登录 https://leaflow.net
+2. 打开浏览器开发者工具 (F12)
+3. 在Network/网络标签页中查找请求的Cookie或Authorization头
+4. 将token/cookie配置到青龙面板的环境变量中
+5. 添加定时任务运行此脚本
 """
 
 import os
-import sys
-import time
 import json
+import time
+import sys
 import logging
 import requests
 from datetime import datetime
@@ -60,11 +38,10 @@ from datetime import datetime
 # 青龙面板通知
 try:
     from notify import send
-    NOTIFY_ENABLED = True
+    NOTIFY_AVAILABLE = True
 except ImportError:
-    NOTIFY_ENABLED = False
-    print("未检测到notify模块，将不发送通知")
-
+    NOTIFY_AVAILABLE = False
+    print("⚠️ 未检测到青龙面板通知模块")
 
 class LeafLowCheckin:
     def __init__(self):
@@ -72,7 +49,7 @@ class LeafLowCheckin:
         self.setup_logging()
         self.checkin_url = "https://checkin.leaflow.net"
         self.main_site = "https://leaflow.net"
-        self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         self.accounts = self.load_accounts()
         
     def setup_logging(self):
@@ -86,47 +63,82 @@ class LeafLowCheckin:
     
     def load_accounts(self):
         """从环境变量加载账号配置"""
-        accounts_env = os.getenv('LEAFLOW_ACCOUNTS', '')
+        tokens_env = os.getenv('LEAFLOW_TOKENS', '')
         
-        if not accounts_env:
-            self.logger.error("❌ 未配置LEAFLOW_ACCOUNTS环境变量")
+        if not tokens_env:
+            self.logger.error("❌ 未配置环境变量 LEAFLOW_TOKENS")
             return []
         
-        # 支持多种分隔符
-        if '&' in accounts_env:
-            account_list = accounts_env.split('&')
-        elif '\n' in accounts_env:
-            account_list = accounts_env.split('\n')
-        else:
-            account_list = [accounts_env]
+        accounts = []
+        token_list = tokens_env.split('&')
         
-        # 过滤空值
-        account_list = [acc.strip() for acc in account_list if acc.strip()]
+        for idx, token_str in enumerate(token_list):
+            if not token_str.strip():
+                continue
+                
+            account = self.parse_token_string(token_str.strip(), idx + 1)
+            if account:
+                accounts.append(account)
         
-        self.logger.info(f"📋 成功加载 {len(account_list)} 个账号")
-        return account_list
+        self.logger.info(f"📋 成功加载 {len(accounts)} 个账号配置")
+        return accounts
     
-    def parse_cookie(self, cookie_str):
-        """解析Cookie字符串为字典
-        纯值格式：xxx;yyy;zzz（按顺序对应三个字段）
-        """
-        cookies = {}
-        if not cookie_str:
-            return cookies
-        
-        # 纯值格式：按顺序分配给三个字段
-        values = [v.strip() for v in cookie_str.split(';') if v.strip()]
-        if len(values) >= 3:
-            cookies['leaflow_session'] = values[0]
-            cookies['remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d'] = values[1]
-            cookies['XSRF-TOKEN'] = values[2]
-        else:
-            self.logger.error(f"❌ Cookie必须包含3个值（用分号分隔），当前只有{len(values)}个")
-        
-        return cookies
+    def parse_token_string(self, token_str, index):
+        """解析token字符串"""
+        try:
+            # 尝试解析JSON格式
+            if token_str.startswith('{'):
+                token_data = json.loads(token_str)
+                return {
+                    'name': f'账号{index}',
+                    'token_data': token_data
+                }
+            
+            # 解析 cookie|header 格式
+            if '|' in token_str:
+                parts = token_str.split('|', 1)
+                cookie_str = parts[0].strip()
+                header_str = parts[1].strip() if len(parts) > 1 else ''
+                
+                token_data = {'cookies': {}}
+                
+                # 解析cookie
+                if cookie_str:
+                    for cookie_pair in cookie_str.split(';'):
+                        if '=' in cookie_pair:
+                            name, value = cookie_pair.strip().split('=', 1)
+                            token_data['cookies'][name.strip()] = value.strip()
+                
+                # 解析header
+                if header_str:
+                    token_data['headers'] = {}
+                    if ':' in header_str:
+                        header_name, header_value = header_str.split(':', 1)
+                        token_data['headers'][header_name.strip()] = header_value.strip()
+                
+                return {
+                    'name': f'账号{index}',
+                    'token_data': token_data
+                }
+            
+            # 纯cookie字符串格式
+            token_data = {'cookies': {}}
+            for cookie_pair in token_str.split(';'):
+                if '=' in cookie_pair:
+                    name, value = cookie_pair.strip().split('=', 1)
+                    token_data['cookies'][name.strip()] = value.strip()
+            
+            return {
+                'name': f'账号{index}',
+                'token_data': token_data
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ 解析账号{index}配置失败: {str(e)}")
+            return None
     
-    def create_session(self, cookie_str):
-        """创建会话"""
+    def create_session(self, token_data):
+        """根据token数据创建会话"""
         session = requests.Session()
         
         # 设置基本headers
@@ -140,10 +152,13 @@ class LeafLowCheckin:
             'Upgrade-Insecure-Requests': '1',
         })
         
-        # 设置cookies
-        cookies = self.parse_cookie(cookie_str)
-        for name, value in cookies.items():
-            session.cookies.set(name, value)
+        # 添加认证信息
+        if 'cookies' in token_data:
+            for name, value in token_data['cookies'].items():
+                session.cookies.set(name, value)
+                
+        if 'headers' in token_data:
+            session.headers.update(token_data['headers'])
         
         return session
     
@@ -158,23 +173,19 @@ class LeafLowCheckin:
             ]
             
             for url in test_urls:
-                try:
-                    response = session.get(url, timeout=30, allow_redirects=False)
-                    self.logger.debug(f"[{account_name}] 测试 {url}: {response.status_code}")
-                    
-                    if response.status_code == 200:
-                        content = response.text.lower()
-                        if any(indicator in content for indicator in ['dashboard', 'profile', 'user', 'logout', 'welcome']):
-                            self.logger.info(f"✅ [{account_name}] 认证有效")
-                            return True, "认证成功"
-                    elif response.status_code in [301, 302, 303]:
-                        location = response.headers.get('location', '')
-                        if 'login' not in location.lower():
-                            self.logger.info(f"✅ [{account_name}] 认证有效 (重定向)")
-                            return True, "认证成功 (重定向)"
-                except Exception as e:
-                    self.logger.debug(f"[{account_name}] 测试URL失败 {url}: {str(e)}")
-                    continue
+                response = session.get(url, timeout=30)
+                self.logger.debug(f"[{account_name}] 测试 {url}: {response.status_code}")
+                
+                if response.status_code == 200:
+                    content = response.text.lower()
+                    if any(indicator in content for indicator in ['dashboard', 'profile', 'user', 'logout', 'welcome']):
+                        self.logger.info(f"✅ [{account_name}] 认证有效")
+                        return True, "认证成功"
+                elif response.status_code in [301, 302, 303]:
+                    location = response.headers.get('location', '')
+                    if 'login' not in location.lower():
+                        self.logger.info(f"✅ [{account_name}] 认证有效 (重定向)")
+                        return True, "认证成功 (重定向)"
             
             return False, "认证失败 - 未找到有效的认证页面"
             
@@ -317,12 +328,15 @@ class LeafLowCheckin:
         
         return False, "签到响应表明失败"
     
-    def checkin_account(self, cookie_str, account_index):
-        """为单个账号执行签到"""
-        account_name = f"账号{account_index + 1}"
+    def perform_token_checkin(self, account_data):
+        """使用token执行签到"""
+        account_name = account_data['name']
+        
+        if 'token_data' not in account_data:
+            return False, "账号配置中未找到token数据"
         
         try:
-            session = self.create_session(cookie_str)
+            session = self.create_session(account_data['token_data'])
             
             # 测试认证
             auth_result = self.test_authentication(session, account_name)
@@ -333,28 +347,27 @@ class LeafLowCheckin:
             return self.perform_checkin(session, account_name)
             
         except Exception as e:
-            return False, f"签到错误: {str(e)}"
+            return False, f"Token签到错误: {str(e)}"
     
-    def run(self):
-        """运行所有账号的签到"""
-        if not self.accounts:
-            self.logger.error("❌ 没有可用的账号配置")
-            return
-        
+    def run_all_accounts(self):
+        """为所有账号执行签到"""
         self.logger.info("=" * 60)
         self.logger.info("🔑 LeafLow 自动签到开始")
-        self.logger.info(f"⏰ 执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         self.logger.info("=" * 60)
+        
+        if not self.accounts:
+            self.logger.error("❌ 没有可用的账号配置")
+            return 0, 0, []
         
         success_count = 0
         total_count = len(self.accounts)
         results = []
         
-        for index, cookie_str in enumerate(self.accounts):
-            account_name = f"账号{index + 1}"
+        for idx, account in enumerate(self.accounts):
+            account_name = account['name']
             self.logger.info(f"\n📋 正在处理 {account_name}...")
             
-            success, message = self.checkin_account(cookie_str, index)
+            success, message = self.perform_token_checkin(account)
             results.append({
                 'account': account_name,
                 'success': success,
@@ -368,8 +381,8 @@ class LeafLowCheckin:
                 self.logger.error(f"❌ [{account_name}] {message}")
             
             # 账号间延迟
-            if index < len(self.accounts) - 1:
-                delay = 5
+            if idx < len(self.accounts) - 1:
+                delay = 3
                 self.logger.info(f"⏱️ 等待 {delay} 秒后处理下一个账号...")
                 time.sleep(delay)
         
@@ -377,43 +390,44 @@ class LeafLowCheckin:
         self.logger.info(f"🏁 签到完成: {success_count}/{total_count} 成功")
         self.logger.info("=" * 60)
         
-        # 发送通知
-        if NOTIFY_ENABLED:
-            self.send_notification(success_count, total_count, results)
-        
         return success_count, total_count, results
-    
-    def send_notification(self, success_count, total_count, results):
-        """发送通知"""
-        try:
-            title = "LeafLow 签到结果"
-            content_lines = [f"签到完成: {success_count}/{total_count} 成功\n"]
-            
-            for result in results:
-                status = "✅" if result['success'] else "❌"
-                content_lines.append(f"{status} {result['account']}: {result['message']}")
-            
-            content = "\n".join(content_lines)
-            send(title, content)
-            self.logger.info("📱 通知已发送")
-            
-        except Exception as e:
-            self.logger.error(f"❌ 发送通知失败: {str(e)}")
-
 
 def main():
     """主函数"""
     try:
         checkin = LeafLowCheckin()
-        checkin.run()
+        
+        # 执行签到
+        success_count, total_count, results = checkin.run_all_accounts()
+        
+        # 发送通知
+        if NOTIFY_AVAILABLE and results:
+            try:
+                title = "LeafLow 自动签到结果"
+                content_lines = [f"签到完成: {success_count}/{total_count} 成功\n"]
+                
+                for result in results:
+                    status = "✅" if result['success'] else "❌"
+                    content_lines.append(f"{status} {result['account']}: {result['message']}")
+                
+                content = "\n".join(content_lines)
+                send(title, content)
+                print("📱 通知已发送")
+                
+            except Exception as e:
+                print(f"❌ 发送通知失败: {str(e)}")
+        
+        # 返回退出码
+        sys.exit(0 if success_count == total_count else 1)
         
     except KeyboardInterrupt:
         print("\n\n⏸️ 用户中断程序")
+        sys.exit(1)
     except Exception as e:
         print(f"\n\n💥 程序异常: {str(e)}")
         import traceback
         traceback.print_exc()
-
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

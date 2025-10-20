@@ -20,12 +20,28 @@ Cookie获取方法：
 1. 浏览器登录 https://leaflow.net
 2. 按F12打开开发者工具
 3. 在Network标签页找到请求
-4. 复制Cookie值（完整的Cookie字符串）
+4. 在Request Headers中找到Cookie字段
+5. 复制完整的Cookie值（必须包含以下三个字段）
 
-示例配置：
-export LEAFLOW_ACCOUNTS="session=xxx; remember_token=yyy"
-或多账号：
-export LEAFLOW_ACCOUNTS="session=xxx1; remember_token=yyy1&session=xxx2; remember_token=yyy2"
+Cookie必需字段：
+- leaflow_session: 会话标识（必需）
+- remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d: 记住登录状态（必需）
+- XSRF-TOKEN: CSRF防护令牌（必需）
+
+单账号配置示例：
+export LEAFLOW_ACCOUNTS="leaflow_session=xxx; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy; XSRF-TOKEN=zzz"
+
+多账号配置示例（使用&分隔）：
+export LEAFLOW_ACCOUNTS="leaflow_session=xxx1; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy1; XSRF-TOKEN=zzz1&leaflow_session=xxx2; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy2; XSRF-TOKEN=zzz2"
+
+多账号配置示例（使用换行符分隔，推荐）：
+export LEAFLOW_ACCOUNTS="leaflow_session=xxx1; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy1; XSRF-TOKEN=zzz1
+leaflow_session=xxx2; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy2; XSRF-TOKEN=zzz2"
+
+注意事项：
+- 每个账号的Cookie必须包含完整的三个字段
+- Cookie值通常很长，请完整复制，不要遗漏任何字符
+- 多账号配置时，建议使用换行符分隔，更清晰易读
 """
 
 import os

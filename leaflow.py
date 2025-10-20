@@ -322,7 +322,7 @@ class LeafLowCheckin:
                 match = re.search(pattern, html_content, re.IGNORECASE)
                 if match:
                     reward = match.group(1)
-                    return True, f"签到成功！获得 {reward} 积分"
+                    return True, f"签到成功！获得 {reward} 元"
             
             return True, "签到成功！"
         
@@ -431,3 +431,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

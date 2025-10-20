@@ -23,24 +23,28 @@ Cookie获取方法：
 4. 在Request Headers中找到Cookie字段
 5. 复制完整的Cookie值（必须包含以下三个字段）
 
-Cookie必需字段：
-- leaflow_session: 会话标识（必需）
-- remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d: 记住登录状态（必需）
-- XSRF-TOKEN: CSRF防护令牌（必需）
+Cookie格式（纯值格式，用分号分隔）：
+xxx;yyy;zzz
+
+按顺序对应三个Cookie字段的值：
+1. leaflow_session的值
+2. remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d的值
+3. XSRF-TOKEN的值
 
 单账号配置示例：
-export LEAFLOW_ACCOUNTS="leaflow_session=eyJpdiI6IjEyMzQ1Njc4OTAi...;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=eyJpdiI6IjEyMzQ1Njc4OTAi...;XSRF-TOKEN=eyJpdiI6IjEyMzQ1Njc4OTAi..."
+export LEAFLOW_ACCOUNTS="eyJpdiI6IjEyMzQ1Njc4OTAi...;eyJpdiI6IjEyMzQ1Njc4OTAi...;eyJpdiI6IjEyMzQ1Njc4OTAi..."
 
 多账号配置示例（使用&分隔）：
-export LEAFLOW_ACCOUNTS="leaflow_session=xxx1;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy1;XSRF-TOKEN=zzz1&leaflow_session=xxx2;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy2;XSRF-TOKEN=zzz2"
+export LEAFLOW_ACCOUNTS="xxx1;yyy1;zzz1&xxx2;yyy2;zzz2"
 
 多账号配置示例（使用换行符分隔，推荐）：
-export LEAFLOW_ACCOUNTS="leaflow_session=xxx1;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy1;XSRF-TOKEN=zzz1
-leaflow_session=xxx2;remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=yyy2;XSRF-TOKEN=zzz2"
+export LEAFLOW_ACCOUNTS="xxx1;yyy1;zzz1
+xxx2;yyy2;zzz2
+xxx3;yyy3;zzz3"
 
 注意事项：
-- 每个账号的Cookie必须包含完整的三个字段
-- Cookie格式：字段名=值，多个字段用分号;直接连接（不要空格）
+- 每个账号必须包含完整的三个Cookie值
+- 三个值用分号;直接连接（不要空格），按顺序对应三个字段
 - Cookie值通常很长，请完整复制，不要遗漏任何字符
 - 多账号配置时，建议使用换行符分隔，更清晰易读
 """
@@ -103,16 +107,21 @@ class LeafLowCheckin:
         return account_list
     
     def parse_cookie(self, cookie_str):
-        """解析Cookie字符串为字典"""
+        """解析Cookie字符串为字典
+        纯值格式：xxx;yyy;zzz（按顺序对应三个字段）
+        """
         cookies = {}
         if not cookie_str:
             return cookies
-            
-        for item in cookie_str.split(';'):
-            item = item.strip()
-            if '=' in item:
-                key, value = item.split('=', 1)
-                cookies[key.strip()] = value.strip()
+        
+        # 纯值格式：按顺序分配给三个字段
+        values = [v.strip() for v in cookie_str.split(';') if v.strip()]
+        if len(values) >= 3:
+            cookies['leaflow_session'] = values[0]
+            cookies['remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d'] = values[1]
+            cookies['XSRF-TOKEN'] = values[2]
+        else:
+            self.logger.error(f"❌ Cookie必须包含3个值（用分号分隔），当前只有{len(values)}个")
         
         return cookies
     

@@ -1,8 +1,8 @@
 """
 顺丰速运日常积分任务
 Author: 爱学习的呆子
-Version: 1.2.0
-Date: 2026-03-17
+Version: 1.3.0
+Date: 2026-04-04
 """
 
 import hashlib
@@ -50,7 +50,7 @@ class Config:
     PROXY_API_URL: str = os.getenv('SF_PROXY_API_URL', '')
     
     # 代理相关配置常量
-    PROXY_TIMEOUT = 15  # 代理超时时间（秒）
+    PROXY_TIMEOUT = 15  # 代理时间（秒）
     MAX_PROXY_RETRIES = 5  # 最大代理重试次数
     REQUEST_RETRY_COUNT = 3  # 请求重试次数
     
@@ -599,6 +599,45 @@ class TaskExecutor:
             self.logger.error(f'签到失败: {error_msg}')
             return False, error_msg
     
+    def new_sign_in(self) -> tuple[bool, str]:
+        """新签到（integralSignV2Service）
+        
+        Returns:
+            tuple[bool, str]: (是否成功, 错误信息)
+        """
+        url = 'https://mcs-mimp-web.sf-express.com/mcs-mimp/commonPost/~memberNonactivity~integralSignV2Service~sign'
+        data = {}
+        
+        original_platform = self.http.headers.get('platform', 'MINI_PROGRAM')
+        self.http.headers['platform'] = 'SFAPP'
+        
+        try:
+            response = self.http.request(url, data=data)
+            if response and response.get('success'):
+                obj = response.get('obj', {})
+                signed = obj.get('signed', False)
+                day_count = obj.get('dayCount', 0)
+                total_count = obj.get('totalCount', 0)
+                award = obj.get('award', {})
+                award_type = obj.get('awardType', '')
+                award_num = obj.get('awardNum', 0)
+                
+                if signed and award:
+                    gift_bag_name = award.get('giftBagName', '未知奖励')
+                    self.logger.success(f'[新签到] 签到成功，连续第{day_count}天，获得【{gift_bag_name}】')
+                elif signed:
+                    self.logger.info(f'[新签到] 今日已签到，连续第{day_count}天')
+                else:
+                    self.logger.info(f'[新签到] 签到完成')
+                
+                return True, ''
+            else:
+                error_msg = response.get('errorMessage', '未知错误') if response else '请求失败'
+                self.logger.error(f'[新签到] 失败: {error_msg}')
+                return False, error_msg
+        finally:
+            self.http.headers['platform'] = original_platform
+    
     def get_task_list(self) -> List[Dict]:
         """获取任务列表"""
         url = 'https://mcs-mimp-web.sf-express.com/mcs-mimp/commonPost/~memberNonactivity~integralTaskStrategyService~queryPointTaskAndSignFromES'
@@ -960,6 +999,10 @@ class AccountManager:
         
         # 先执行APP签到
         app_sign_success, app_error_msg = executor.app_sign_in()
+        time.sleep(1)
+        
+        # 执行新签到
+        new_sign_success, new_sign_error = executor.new_sign_in()
         time.sleep(1)
         
         # 再执行小程序签到

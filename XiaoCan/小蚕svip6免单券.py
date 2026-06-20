@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+import base64 as _b64
+
 """
-小蚕 SVIP6 免单券 并发抢券脚本 (多账号版)
 饱了么脚本交流群：476250706
+小蚕 SVIP6 免单券 并发抢券脚本 (多账号版)
 
 用法:
   1. 抓包获取认证信息:
@@ -13,8 +13,8 @@
        x-sivir   → JWT Token (eyJ...)
 
   2. 设置环境变量:
-     - xcqd          格式: x-vayne#x-teemo#x-sivir
-                        多账号用 @ 分隔，例如:  uid1#sid1#jwt1@uid2#sid2#jwt2
+     - xcqd          格式: 备注名#x-vayne#x-teemo#x-sivir
+                        多账号用 @ 或换行分隔
 
   3. 修改脚本顶部参数（无需设环境变量）:
      - THREADS_PER_ACCOUNT  每个账号并发线程数 (默认: 10)
@@ -26,6 +26,9 @@
   因使用本脚本产生的风险由使用者自行承担。
 """
 
+def _B(_s):
+ return _b64.b64decode(_s).decode()
+_B(b'CuWwj+ialSBTVklQNiDlhY3ljZXliLgg5bm25Y+R5oqi5Yi46ISa5pysICjlpJrotKblj7fniYgpCgrnlKjms5U6CiAgMS4g5oqT5YyF6I635Y+W6K6k6K+B5L+h5oGvOgogICAgIOWwj+eoi+W6j++8mmh0dHBzOi8vd3hhdXJsLmNuL3MxbDRhcEhFc1BnCiAgICAg5a+5IGh0dHBzOi8vZ3cueGlhb2NhbnRlY2guY29tL3JwYyDmipPljIXvvIzmib7liLDku7vmhI/or7fmsYLnmoTku6XkuIvkuInkuKror7fmsYLlpLQ6CiAgICAgICB4LXZheW5lICAg4oaSIOeUqOaIt0lEICjmlbDlrZcpCiAgICAgICB4LXRlZW1vICAg4oaSIHNpbGtfaWQgKOaVsOWtlykKICAgICAgIHgtc2l2aXIgICDihpIgSldUIFRva2VuIChleUouLi4pCgogIDIuIOiuvue9rueOr+Wig+WPmOmHjzoKICAgICAtIHhjcWQgICAgICAgICAg5qC85byPOiDlpIfms6jlkI0jeC12YXluZSN4LXRlZW1vI3gtc2l2aXIKICAgICAgICAgICAgICAgICAgICAgICAg5aSa6LSm5Y+355SoIEAg5oiW5o2i6KGM5YiG6ZqUCgogIDMuIOS/ruaUueiEmuacrOmhtumDqOWPguaVsO+8iOaXoOmcgOiuvueOr+Wig+WPmOmHj++8iToKICAgICAtIFRIUkVBRFNfUEVSX0FDQ09VTlQgIOavj+S4qui0puWPt+W5tuWPkee6v+eoi+aVsCAo6buY6K6kOiAxMCkKICAgICAtIFRBUkdFVF9USU1FICAgICAgICAgIOebruagh+aKouWIuOaXtumXtCBISDpNTSAo6buY6K6kOiAiMTQ6MDAiKQogICAgIC0gQURWQU5DRV9NUyAgICAgICAgICAg5o+Q5YmN5Y+R5bCE5q+r56eS5pWwICjpu5jorqQ6IDIwMCkKCuWFjei0o+WjsOaYjjoKICDmnKzohJrmnKzku4XkvpvlrabkuaDlkozmioDmnK/noJTnqbbkvb/nlKjvvIzor7fpgbXlrojlubPlj7Dop4TliJnlkoznm7jlhbPms5Xlvovms5Xop4TjgIIKICDlm6Dkvb/nlKjmnKzohJrmnKzkuqfnlJ/nmoTpo47pmannlLHkvb/nlKjogIXoh6rooYzmib/mi4XjgIIK')
 import hashlib
 import json
 import os
@@ -36,617 +39,423 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
-
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
-# ── 配置常量 ─────────────────────────────────────────────
-RPC_URL = "https://gw.xiaocantech.com/rpc"
-RPC_HOST = "gw.xiaocantech.com"
-
-SERVER_NAME = "SilkwormVip"
-GRAB_METHOD = "VipRightsService.GrabFreeOrderQuota"
-CHECK_METHOD = "VipRightsService.FreeOrderEventInfo"
-
-COOKIE_ENV = "xcqd"
+RPC_URL = _B(b'aHR0cHM6Ly9ndy54aWFvY2FudGVjaC5jb20vcnBj')
+RPC_HOST = _B(b'Z3cueGlhb2NhbnRlY2guY29t')
+SERVER_NAME = _B(b'U2lsa3dvcm1WaXA=')
+GRAB_METHOD = _B(b'VmlwUmlnaHRzU2VydmljZS5HcmFiRnJlZU9yZGVyUXVvdGE=')
+CHECK_METHOD = _B(b'VmlwUmlnaHRzU2VydmljZS5GcmVlT3JkZXJFdmVudEluZm8=')
+COOKIE_ENV = _B(b'eGNxZA==')
 HTTP_TIMEOUT = 5
-# ── 可修改参数（直接改这里，不用设环境变量）──────────────
-THREADS_PER_ACCOUNT = 10       # 每个账号的并发线程数
-TARGET_TIME = "14:00"          # 目标抢券时间 HH:MM
-ADVANCE_MS = 200               # 提前发射毫秒数（补偿网络延迟）
-
-# ── ANSI 颜色 ────────────────────────────────────────────
-_C = {
-    "R": "\033[31m", "G": "\033[32m", "Y": "\033[33m",
-    "B": "\033[34m", "C": "\033[36m", "M": "\033[35m",
-    "W": "\033[90m", "D": "\033[2m", "BOLD": "\033[1m", "RST": "\033[0m",
-}
-_ACC_COLORS = ["B", "M", "C", "G", "R", "Y"]
+THREADS_PER_ACCOUNT = 10
+TARGET_TIME = _B(b'MTQ6MDA=')
+ADVANCE_MS = 100
+_C = {_B(b'Ug=='): _B(b'G1szMW0='), _B(b'Rw=='): _B(b'G1szMm0='), _B(b'WQ=='): _B(b'G1szM20='), _B(b'Qg=='): _B(b'G1szNG0='), _B(b'Qw=='): _B(b'G1szNm0='), _B(b'TQ=='): _B(b'G1szNW0='), _B(b'Vw=='): _B(b'G1s5MG0='), _B(b'RA=='): _B(b'G1sybQ=='), _B(b'Qk9MRA=='): _B(b'G1sxbQ=='), _B(b'UlNU'): _B(b'G1swbQ==')}
+_ACC_COLORS = [_B(b'Qg=='), _B(b'TQ=='), _B(b'Qw=='), _B(b'Rw=='), _B(b'Ug=='), _B(b'WQ==')]
 _print_lock = threading.Lock()
 
-
-def ts_print(*args, **kwargs):
+def _IlI(*args, **kwargs):
     with _print_lock:
         print(*args, **kwargs)
 
+def _oOI(_10ll, *_00lI):
+    _OOll = ''.join((_C.get(_OII, '') for _OII in _00lI))
+    return str(_OOll) + str(_10ll) + str(_C[_B(b'UlNU')]) if _OOll else _10ll
 
-def colored(text, *codes):
-    prefix = "".join(_C.get(c, "") for c in codes)
-    return f"{prefix}{text}{_C['RST']}" if prefix else text
-
-
-def md5(text: str) -> str:
-    return hashlib.md5(text.encode()).hexdigest()
-
-
-# ── 认证解析 ─────────────────────────────────────────────
+def _O0I1(_10ll: str) -> str:
+    return hashlib.md5(_10ll.encode()).hexdigest()
 
 class GrabAccount:
-    """单个账号的认证信息"""
+    _B(b'5Y2V5Liq6LSm5Y+355qE6K6k6K+B5L+h5oGv')
+    __slots__ = (_B(b'dXNlcl9pZA=='), _B(b'c2lsa19pZA=='), _B(b'dG9rZW4='), _B(b'bGFiZWw='), _B(b'Y29sb3I='))
 
-    __slots__ = ("user_id", "silk_id", "token", "label", "color")
+    def __init__(self, _lO: str, _1lO: int=1, _OOo: int=1):
+        _110 = _lO.strip().split(_B(b'Iw=='))
+        if len(_110) == 4:
+            (_10l1, _0OOl, _o1, _1l) = _110
+        elif len(_110) == 3:
+            _10l1 = ''
+            (_0OOl, _o1, _1l) = _110
+        else:
+            raise ValueError(_B(b'6LSm5Y+3') + str(_1lO) + _B(b'OiBjb29raWUg5qC85byP5bqU5Li6IOWkh+azqOWQjSN4LXZheW5lI3gtdGVlbW8jeC1zaXZpcu+8jOW9k+WJjSA=') + str(len(_110)) + _B(b'IOautTog') + str(_lO[:50]) + _B(b'Li4u'))
+        if not _0OOl.isdigit():
+            raise ValueError(_B(b'6LSm5Y+3') + str(_1lO) + _B(b'OiB4LXZheW5lIOW6lOS4uue6r+aVsOWtlzog') + str(_0OOl))
+        if not _o1.isdigit():
+            raise ValueError(_B(b'6LSm5Y+3') + str(_1lO) + _B(b'OiB4LXRlZW1vIOW6lOS4uue6r+aVsOWtlzog') + str(_o1))
+        if not _1l or len(_1l) < 20:
+            raise ValueError(_B(b'6LSm5Y+3') + str(_1lO) + _B(b'OiB4LXNpdmlyIChKV1QpIOaXoOaViDog') + str(_1l[:20]) + _B(b'Li4u'))
+        self.user_id = _0OOl
+        self.silk_id = _o1
+        self.token = _1l
+        self.label = _10l1 if _10l1 else _B(b'6LSm5Y+3') + str(_1lO) if _OOo > 1 else _B(b'6LSm5Y+3') + str(_1lO)
+        self.color = _ACC_COLORS[(_1lO - 1) % len(_ACC_COLORS)]
 
-    def __init__(self, cookie: str, index: int = 1, total: int = 1):
-        parts = cookie.strip().split("#")
-        if len(parts) != 3:
-            raise ValueError(
-                f"账号{index}: cookie 格式应为 x-vayne#x-teemo#x-sivir，"
-                f"当前 {len(parts)} 段: {cookie[:50]}..."
-            )
-        user_id, silk_id, token = parts
-        if not user_id.isdigit():
-            raise ValueError(f"账号{index}: x-vayne 应为纯数字: {user_id}")
-        if not silk_id.isdigit():
-            raise ValueError(f"账号{index}: x-teemo 应为纯数字: {silk_id}")
-        if not token or len(token) < 20:
-            raise ValueError(f"账号{index}: x-sivir (JWT) 无效: {token[:20]}...")
-
-        self.user_id = user_id
-        self.silk_id = silk_id
-        self.token = token
-        self.label = f"账号{index}" if total <= 1 else f"账号{index}/{total}"
-        self.color = _ACC_COLORS[(index - 1) % len(_ACC_COLORS)]
-
-    def build_base_headers(self) -> dict:
-        """构建该账号的基础请求头（不含签名）"""
-        return {
-            "Host": RPC_HOST,
-            "servername": SERVER_NAME,
-            "content-type": "application/json",
-            "x-platform": "iOS",
-            "x-version": "3.16.9.0",
-            "x-annie": "XC",
-            "x-vayne": self.user_id,
-            "x-teemo": self.silk_id,
-            "x-sivir": self.token,
-            "x-city": "430105",
-            "x-citycode": "430105",
-            "user-agent": "XC;iOS;3.16.9",
-            "accept": "*/*",
-            "accept-language": "zh-Hans-CN;q=1.0",
-            "accept-encoding": "br;q=1.0, gzip;q=0.9, deflate;q=0.8",
-        }
+    def _O0(self) -> dict:
+        _B(b'5p6E5bu66K+l6LSm5Y+355qE5Z+656GA6K+35rGC5aS077yI5LiN5ZCr562+5ZCN77yJ')
+        return {_B(b'SG9zdA=='): RPC_HOST, _B(b'c2VydmVybmFtZQ=='): SERVER_NAME, _B(b'Y29udGVudC10eXBl'): _B(b'YXBwbGljYXRpb24vanNvbg=='), _B(b'eC1wbGF0Zm9ybQ=='): _B(b'aU9T'), _B(b'eC12ZXJzaW9u'): _B(b'My4xNi45LjA='), _B(b'eC1hbm5pZQ=='): _B(b'WEM='), _B(b'eC12YXluZQ=='): self.user_id, _B(b'eC10ZWVtbw=='): self.silk_id, _B(b'eC1zaXZpcg=='): self.token, _B(b'eC1jaXR5'): _B(b'NDMwMTA1'), _B(b'eC1jaXR5Y29kZQ=='): _B(b'NDMwMTA1'), _B(b'dXNlci1hZ2VudA=='): _B(b'WEM7aU9TOzMuMTYuOQ=='), _B(b'YWNjZXB0'): _B(b'Ki8q'), _B(b'YWNjZXB0LWxhbmd1YWdl'): _B(b'emgtSGFucy1DTjtxPTEuMA=='), _B(b'YWNjZXB0LWVuY29kaW5n'): _B(b'YnI7cT0xLjAsIGd6aXA7cT0wLjksIGRlZmxhdGU7cT0wLjg=')}
 
     def __repr__(self):
-        return f"GrabAccount(id={self.user_id}, silk={self.silk_id}, label={self.label})"
+        return _B(b'R3JhYkFjY291bnQoaWQ9') + str(self.user_id) + _B(b'LCBzaWxrPQ==') + str(self.silk_id) + _B(b'LCBsYWJlbD0=') + str(self.label) + _B(b'KQ==')
 
+def _lO1(_1I: str) -> list[GrabAccount]:
+    _B(b'6Kej5p6Q546v5aKD5Y+Y6YeP77yM5pSv5oyBIEAg5oiW5o2i6KGM5YiG6ZqU5aSa6LSm5Y+3')
+    _OoIl = [_OII for _OII in _1I.replace(_B(b'Cg=='), _B(b'QA==')).split(_B(b'QA==')) if _OII.strip()]
+    if not _OoIl:
+        raise ValueError(_B(b'5pyq5om+5Yiw5pyJ5pWI55qEIGNvb2tpZSDphY3nva4='))
+    _OOo = len(_OoIl)
+    _IoIl = []
+    for (_OIlO, _1011) in enumerate(_OoIl, 1):
+        _IoIl.append(GrabAccount(_1011, _1lO=_OIlO, _OOo=_OOo))
+    return _IoIl
 
-def parse_accounts(cookie_text: str) -> list[GrabAccount]:
-    """解析环境变量，支持 @ 分隔多账号"""
-    raw_list = [c for c in cookie_text.split("@") if c.strip()]
-    if not raw_list:
-        raise ValueError("未找到有效的 cookie 配置")
-    total = len(raw_list)
-    accounts = []
-    for i, raw in enumerate(raw_list, 1):
-        accounts.append(GrabAccount(raw, index=i, total=total))
-    return accounts
+def _lo(_o1: str) -> str:
+    _B(b'WC1OYW1pOiA05a2X6IqC6ZqP5py65YmN57yAICsgc2lsa19pZCArIOmaj+acuuWQjue8gA==')
+    _l01 = uuid.uuid4().hex
+    _O0oO = max(0, 20 - len(_o1) - 4)
+    return _l01[:4] + _o1 + _l01[4:4 + _O0oO]
 
+def _1OOI(_OI1O: str, _0o1: str, _o0I1: str, _01: str) -> str:
+    _B(b'WC1Bc2hlOiBtZDUobWQ1KHNlcnZpY2UubWV0aG9kKSArIHhfZ2FyZW4gKyB4X25hbWkp')
+    _0l = (str(_OI1O) + _B(b'Lg==') + str(_0o1)).lower()
+    return _O0I1(_O0I1(_0l) + _o0I1 + _01)
 
-# ── 签名生成 ─────────────────────────────────────────────
+def _l0(_0oO: dict, _110I: str, _o1: str) -> dict:
+    _B(b'5Zyo5Z+656GA6K+35rGC5aS05LiK5rOo5YWl5Yqo5oCB562+5ZCN')
+    _1O = dict(_0oO)
+    _1O[_B(b'bWV0aG9kbmFtZQ==')] = _110I
+    _01 = _lo(_o1)
+    _o0I1 = str(int(time.time() * 1000))
+    _1O[_B(b'eC1uYW1p')] = _01
+    _1O[_B(b'eC1nYXJlbg==')] = _o0I1
+    _1O[_B(b'eC1hc2hl')] = _1OOI(SERVER_NAME, _110I, _o0I1, _01)
+    return _1O
 
-def generate_x_nami(silk_id: str) -> str:
-    """X-Nami: 4字节随机前缀 + silk_id + 随机后缀"""
-    rid = uuid.uuid4().hex
-    tail_len = max(0, 20 - len(silk_id) - 4)
-    return rid[:4] + silk_id + rid[4:4 + tail_len]
-
-
-def generate_x_ashe(server: str, method: str, x_garen: str, x_nami: str) -> str:
-    """X-Ashe: md5(md5(service.method) + x_garen + x_nami)"""
-    service_method = f"{server}.{method}".lower()
-    return md5(md5(service_method) + x_garen + x_nami)
-
-
-def build_signed_headers(base_headers: dict, method_name: str,
-                         silk_id: str) -> dict:
-    """在基础请求头上注入动态签名"""
-    headers = dict(base_headers)
-    headers["methodname"] = method_name
-    x_nami = generate_x_nami(silk_id)
-    x_garen = str(int(time.time() * 1000))
-    headers["x-nami"] = x_nami
-    headers["x-garen"] = x_garen
-    headers["x-ashe"] = generate_x_ashe(SERVER_NAME, method_name, x_garen, x_nami)
-    return headers
-
-
-# ── 服务器时间校准 ───────────────────────────────────────
-
-def sync_server_time() -> tuple:
-    """返回 (server_offset_seconds, rtt_seconds)"""
+def _ooo0() -> tuple:
+    _B(b'6L+U5ZueIChzZXJ2ZXJfb2Zmc2V0X3NlY29uZHMsIHJ0dF9zZWNvbmRzKQ==')
     try:
-        start = time.time()
-        resp = requests.head(RPC_URL, timeout=5, headers={"accept": "*/*"})
-        elapsed = time.time() - start
-        server_date = resp.headers.get("Date", "")
-        if server_date:
-            server_ts = parsedate_to_datetime(server_date).timestamp()
-            offset = server_ts - (start + elapsed / 2)
-            return offset, elapsed
+        _10O = time.time()
+        _0Ol = requests.head(RPC_URL, timeout=5, _1O={_B(b'YWNjZXB0'): _B(b'Ki8q')})
+        _OoI0 = time.time() - _10O
+        _O1 = _0Ol.headers.get(_B(b'RGF0ZQ=='), '')
+        if _O1:
+            _l1 = parsedate_to_datetime(_O1).timestamp()
+            _0lo = _l1 - (_10O + _OoI0 / 2)
+            return (_0lo, _OoI0)
     except Exception as e:
-        ts_print(colored(f"[校时] HEAD 失败: {e}", "Y"))
-
-    # TCP 回退
+        _IlI(_oOI(_B(b'W+agoeaXtl0gSEVBRCDlpLHotKU6IA==') + str(e), _B(b'WQ==')))
     try:
         import socket
-        start = time.time()
-        sock = socket.create_connection((RPC_HOST, 443), timeout=3)
-        rtt = time.time() - start
-        sock.close()
-        ts_print(colored(f"[校时] TCP RTT ≈ {rtt*1000:.0f}ms", "Y"))
-        return 0, rtt
+        _10O = time.time()
+        _oo = socket.create_connection((RPC_HOST, 443), timeout=3)
+        _0llI = time.time() - _10O
+        _oo.close()
+        _IlI(_oOI(_B(b'W+agoeaXtl0gVENQIFJUVCDiiYgg') + format(_0llI * 1000, _B(b'LjBm')) + _B(b'bXM='), _B(b'WQ==')))
+        return (0, _0llI)
     except Exception:
-        ts_print(colored("[校时] 失败，使用本地时间", "R"))
-        return 0, 0.1
+        _IlI(_oOI(_B(b'W+agoeaXtl0g5aSx6LSl77yM5L2/55So5pys5Zyw5pe26Ze0'), _B(b'Ug==')))
+        return (0, 0.1)
 
+def _00(_0lo: float) -> float:
+    return time.time() + _0lo
 
-def get_calibrated_time(offset: float) -> float:
-    return time.time() + offset
+def _Io() -> requests.Session:
+    _OIll = requests.Session()
+    _olo = Retry(_OOo=1, connect=1, read=1, backoff_factor=0.1, status_forcelist=(429, 500, 502, 503), allowed_methods=frozenset([_B(b'UE9TVA==')]))
+    _I00 = HTTPAdapter(max_retries=_olo, pool_connections=50, pool_maxsize=50)
+    _OIll.mount(_B(b'aHR0cHM6Ly8='), _I00)
+    return _OIll
 
-
-# ── HTTP Session ─────────────────────────────────────────
-
-def create_session() -> requests.Session:
-    session = requests.Session()
-    retry = Retry(
-        total=1, connect=1, read=1, backoff_factor=0.1,
-        status_forcelist=(429, 500, 502, 503),
-        allowed_methods=frozenset(["POST"]),
-    )
-    adapter = HTTPAdapter(max_retries=retry, pool_connections=50, pool_maxsize=50)
-    session.mount("https://", adapter)
-    return session
-
-
-# ── API 调用 ─────────────────────────────────────────────
-
-def check_inventory(session: requests.Session,
-                    account: GrabAccount) -> tuple:
-    """返回 (ok, inventory, start_time)"""
+def _OOO(_OIll: requests.Session, _OO1: GrabAccount) -> tuple:
+    _B(b'6L+U5ZueIChvaywgaW52ZW50b3J5LCBzdGFydF90aW1lKQ==')
     try:
-        headers = build_signed_headers(
-            account.build_base_headers(), CHECK_METHOD, account.silk_id
-        )
-        payload = json.dumps({"silk_id": int(account.silk_id)},
-                            separators=(",", ":"))
-        resp = session.post(RPC_URL, headers=headers, data=payload,
-                           timeout=HTTP_TIMEOUT)
-        result = resp.json()
-        status = result.get("status", {})
-        if status.get("code") == 0:
-            ei = result.get("event_info", {})
-            return True, ei.get("inventory", -1), ei.get("start_time", 0)
-        return False, -1, 0
+        _1O = _l0(_OO1.build_base_headers(), CHECK_METHOD, _OO1.silk_id)
+        _lO0 = json.dumps({_B(b'c2lsa19pZA=='): int(_OO1.silk_id)}, separators=(_B(b'LA=='), _B(b'Og==')))
+        _0Ol = _OIll.post(RPC_URL, _1O=_1O, data=_lO0, timeout=HTTP_TIMEOUT)
+        _I1 = _0Ol.json()
+        _o1Ol = _I1.get(_B(b'c3RhdHVz'), {})
+        if _o1Ol.get(_B(b'Y29kZQ==')) == 0:
+            _100 = _I1.get(_B(b'ZXZlbnRfaW5mbw=='), {})
+            return (True, _100.get(_B(b'aW52ZW50b3J5'), -1), _100.get(_B(b'c3RhcnRfdGltZQ=='), 0))
+        return (False, -1, 0)
     except Exception as e:
-        ts_print(colored(f"[{account.label}] 库存查询异常: {e}", "Y"))
-        return False, -1, 0
+        _IlI(_oOI(_B(b'Ww==') + str(_OO1.label) + _B(b'XSDlupPlrZjmn6Xor6LlvILluLg6IA==') + str(e), _B(b'WQ==')))
+        return (False, -1, 0)
 
-
-def grab_free_order(session: requests.Session,
-                    account: GrabAccount) -> tuple:
-    """返回 (success, message)"""
-    headers = build_signed_headers(
-        account.build_base_headers(), GRAB_METHOD, account.silk_id
-    )
-    payload = json.dumps({"silk_id": int(account.silk_id)},
-                        separators=(",", ":"))
-    resp = session.post(RPC_URL, headers=headers, data=payload,
-                       timeout=HTTP_TIMEOUT)
-    result = resp.json()
-    status = result.get("status", {})
-    code = status.get("code", -1)
-    msg = status.get("msg", "")
-
-    if code == 0:
-        info = result.get("info", {})
-        rp = info.get("red_pack_value", "未知")
-        return True, f"🎉 抢券成功! 红包: {rp}"
-    elif code == 40021:
-        return False, "本场已抢完~"
-    elif code == 40022:
-        return False, f"已抢过/已达上限"
-    elif code == 40023:
-        return False, f"活动未开始"
+def _Il(_OIll: requests.Session, _OO1: GrabAccount) -> tuple:
+    _B(b'6L+U5ZueIChzdWNjZXNzLCBtZXNzYWdlKQ==')
+    _1O = _l0(_OO1.build_base_headers(), GRAB_METHOD, _OO1.silk_id)
+    _lO0 = json.dumps({_B(b'c2lsa19pZA=='): int(_OO1.silk_id)}, separators=(_B(b'LA=='), _B(b'Og==')))
+    _0Ol = _OIll.post(RPC_URL, _1O=_1O, data=_lO0, timeout=HTTP_TIMEOUT)
+    _I1 = _0Ol.json()
+    _o1Ol = _I1.get(_B(b'c3RhdHVz'), {})
+    _ll0 = _o1Ol.get(_B(b'Y29kZQ=='), -1)
+    _l1O = _o1Ol.get(_B(b'bXNn'), '')
+    if _ll0 == 0:
+        _0OI = _I1.get(_B(b'aW5mbw=='), {})
+        _OI0O = _0OI.get(_B(b'cmVkX3BhY2tfdmFsdWU='), _B(b'5pyq55+l'))
+        return (True, _B(b'8J+OiSDmiqLliLjmiJDlip8hIOe6ouWMhTog') + str(_OI0O))
+    elif _ll0 == 40021:
+        return (False, _B(b'5pys5Zy65bey5oqi5a6Mfg=='))
+    elif _ll0 == 40022:
+        return (False, _B(b'5bey5oqi6L+HL+W3sui+vuS4iumZkA=='))
+    elif _ll0 == 40023:
+        return (False, _B(b'5rS75Yqo5pyq5byA5aeL'))
     else:
-        return False, f"code={code} {msg}"
+        return (False, _B(b'Y29kZT0=') + str(_ll0) + _B(b'IA==') + str(_l1O))
 
-
-# ── 时间工具 ─────────────────────────────────────────────
-
-def parse_target_time(time_str: str) -> datetime:
-    now = datetime.now()
-    parts = time_str.strip().split(":")
-    if len(parts) != 2:
-        raise ValueError(f"时间格式错误: {time_str}")
-    h, m = int(parts[0]), int(parts[1])
-    target = now.replace(hour=h, minute=m, second=0, microsecond=0)
-    if target <= now:
-        target += timedelta(days=1)
-    return target
-
-
-# ── 并发抢券引擎 ─────────────────────────────────────────
+def _o0I(_OOOI: str) -> datetime:
+    _OOoO = datetime.now()
+    _110 = _OOOI.strip().split(_B(b'Og=='))
+    if len(_110) != 2:
+        raise ValueError(_B(b'5pe26Ze05qC85byP6ZSZ6K+vOiA=') + str(_OOOI))
+    (_OOl, _IOI) = (int(_110[0]), int(_110[1]))
+    _0o1I = _OOoO.replace(hour=_OOl, minute=_IOI, second=0, microsecond=0)
+    if _0o1I <= _OOoO:
+        _0o1I += timedelta(days=1)
+    return _0o1I
 
 class FireResult:
-    __slots__ = ("account", "thread_id", "success", "message",
-                 "latency_ms")
+    __slots__ = (_B(b'YWNjb3VudA=='), _B(b'dGhyZWFkX2lk'), _B(b'c3VjY2Vzcw=='), _B(b'bWVzc2FnZQ=='), _B(b'bGF0ZW5jeV9tcw=='))
 
-    def __init__(self, account: GrabAccount, thread_id: int,
-                 success: bool, message: str, latency_ms: float):
-        self.account = account
-        self.thread_id = thread_id
-        self.success = success
-        self.message = message
-        self.latency_ms = latency_ms
-
+    def __init__(self, _OO1: GrabAccount, _oII: int, _0oO1: bool, _11: str, _o01: float):
+        self.account = _OO1
+        self.thread_id = _oII
+        self.success = _0oO1
+        self.message = _11
+        self.latency_ms = _o01
 
 class AccountGrabber:
-    """单账号抢券器：拥有独立线程池和 Barrier"""
+    _B(b'5Y2V6LSm5Y+35oqi5Yi45Zmo77ya5oul5pyJ54us56uL57q/56iL5rGg5ZKMIEJhcnJpZXI=')
 
-    def __init__(self, account: GrabAccount, n_threads: int):
-        self.account = account
-        self.n_threads = min(n_threads, 50)
-        self.base_headers = account.build_base_headers()
+    def __init__(self, _OO1: GrabAccount, _00l: int):
+        self.account = _OO1
+        self.n_threads = min(_00l, 50)
+        self.base_headers = _OO1.build_base_headers()
         self.results: list[FireResult] = []
         self.results_lock = threading.Lock()
 
-    def _log(self, *args):
-        prefix = colored(f"[{self.account.label}]", self.account.color, "BOLD")
-        ts_print(prefix, *args)
+    def _1o(self, *args):
+        _OOll = _oOI(_B(b'Ww==') + str(self.account.label) + _B(b'XQ=='), self.account.color, _B(b'Qk9MRA=='))
+        _IlI(_OOll, *args)
 
-    def _worker(self, thread_id: int,
-                ready_counter: list, ready_lock: threading.Lock,
-                barrier: threading.Barrier,
-                server_offset: float, target_ts: float, advance_ms: int):
-        session = create_session()
-
+    def _0I1(self, _oII: int, _llO: list, _10: threading.Lock, _1I11: threading.Barrier, _o11: float, _1o1O: float, _ll0O: int):
+        _OIll = _Io()
         try:
-            # 预热
             try:
-                h = build_signed_headers(
-                    self.base_headers, CHECK_METHOD, self.account.silk_id
-                )
-                session.post(RPC_URL, headers=h,
-                            data=json.dumps({"silk_id": int(self.account.silk_id)},
-                                           separators=(",", ":")),
-                            timeout=HTTP_TIMEOUT)
+                _OOl = _l0(self.base_headers, CHECK_METHOD, self.account.silk_id)
+                _OIll.post(RPC_URL, _1O=_OOl, data=json.dumps({_B(b'c2lsa19pZA=='): int(self.account.silk_id)}, separators=(_B(b'LA=='), _B(b'Og=='))), timeout=HTTP_TIMEOUT)
             except Exception:
                 pass
-
-            # 就绪计数
-            with ready_lock:
-                ready_counter[0] += 1
-
-            # 等待本账号 Barrier
+            with _10:
+                _llO[0] += 1
             try:
-                barrier.wait()
+                _1I11.wait()
             except threading.BrokenBarrierError:
                 pass
-
-            # 精确等到发射时刻
-            fire_at = target_ts - advance_ms / 1000.0
+            _OIl = _1o1O - _ll0O / 1000.0
             while True:
-                now = get_calibrated_time(server_offset)
-                if now >= fire_at:
+                _OOoO = _00(_o11)
+                if _OOoO >= _OIl:
                     break
-                if now < fire_at - 0.01:
-                    time.sleep((fire_at - now) * 0.5)
-
-            # 发射
-            start = time.perf_counter()
-            success, message = grab_free_order(session, self.account)
-            elapsed = (time.perf_counter() - start) * 1000
-
+                if _OOoO < _OIl - 0.01:
+                    time.sleep((_OIl - _OOoO) * 0.5)
+            _10O = time.perf_counter()
+            (_0oO1, _11) = _Il(_OIll, self.account)
+            _OoI0 = (time.perf_counter() - _10O) * 1000
             with self.results_lock:
-                self.results.append(FireResult(
-                    account=self.account, thread_id=thread_id,
-                    success=success, message=message,
-                    latency_ms=elapsed,
-                ))
-
+                self.results.append(FireResult(_OO1=self.account, _oII=_oII, _0oO1=_0oO1, _11=_11, _o01=_OoI0))
         except Exception as e:
             with self.results_lock:
-                self.results.append(FireResult(
-                    account=self.account, thread_id=thread_id,
-                    success=False, message=f"异常: {e}",
-                    latency_ms=-1,
-                ))
-
+                self.results.append(FireResult(_OO1=self.account, _oII=_oII, _0oO1=False, _11=_B(b'5byC5bi4OiA=') + str(e), _o01=-1))
 
 class MultiAccountGrabber:
-    """多账号并发抢券引擎 —— 每个账号独立线程池、独立 Barrier"""
+    _B(b'5aSa6LSm5Y+35bm25Y+R5oqi5Yi45byV5pOOIOKAlOKAlCDmr4/kuKrotKblj7fni6znq4vnur/nqIvmsaDjgIHni6znq4sgQmFycmllcg==')
 
-    def __init__(self, accounts: list[GrabAccount],
-                 threads_per_account: int = THREADS_PER_ACCOUNT):
-        self.accounts = accounts
-        self.num_accounts = len(accounts)
-        self.threads_per_account = threads_per_account
-        self.grabbers = [
-            AccountGrabber(acc, threads_per_account) for acc in accounts
-        ]
+    def __init__(self, _IoIl: list[GrabAccount], _10I0: int=THREADS_PER_ACCOUNT):
+        self.accounts = _IoIl
+        self.num_accounts = len(_IoIl)
+        self.threads_per_account = _10I0
+        self.grabbers = [AccountGrabber(_01I0, _10I0) for _01I0 in _IoIl]
 
-    # ── 主流程 ──
-
-    def run(self, target_time_str: str = TARGET_TIME,
-            advance_ms: int = ADVANCE_MS) -> dict:
-        """
-        执行一次多账号并发抢券。
-        每个账号独立 10 线程 + 独立 Barrier，互不干扰。
-        返回 {account_label: bool}
-        """
-        total_workers = self.threads_per_account * self.num_accounts
-
-        ts_print(colored("=" * 60, "C"))
-        ts_print(colored("  小蚕 SVIP6 免单券 - 多账号并发抢券", "C", "BOLD"))
-        ts_print(colored(
-            f"  账号数: {self.num_accounts}  |  "
-            f"每账号线程: {self.threads_per_account}  |  "
-            f"总线程: {total_workers}",
-            "C",
-        ))
-        ts_print(colored("=" * 60, "C"))
-        ts_print()
-
-        # ── 1. 校时 ──
-        ts_print(colored("┌─ [1/6] 校准服务器时间", "B", "BOLD"))
-        server_offset, rtt = sync_server_time()
-        ts_print(f"│  服务器偏差: {server_offset*1000:+.0f}ms  "
-                f"RTT: {rtt*1000:.0f}ms")
-
-        # ── 2. 各账号查库存 ──
-        ts_print(colored("├─ [2/6] 查询各账号活动状态", "B", "BOLD"))
-        shared_start_time = None
-        for grabber in self.grabbers:
-            acc = grabber.account
-            session = create_session()
-            ok, inv, start_ts = check_inventory(session, acc)
-            if start_ts and not shared_start_time:
-                shared_start_time = start_ts
-
-            icon = "✅" if inv > 0 else ("⚠️" if inv == 0 else "❓")
-            color = "G" if inv > 0 else "Y"
-            grabber._log(f"库存: {colored(str(inv), color)}  {icon}")
-
-        # ── 3. 目标时间 ──
-        ts_print(colored("├─ [3/6] 计算目标时间", "B", "BOLD"))
+    def _0OIo(self, _ol: str=TARGET_TIME, _ll0O: int=ADVANCE_MS) -> dict:
+        _B(b'CiAgICAgICAg5omn6KGM5LiA5qyh5aSa6LSm5Y+35bm25Y+R5oqi5Yi444CCCiAgICAgICAg5q+P5Liq6LSm5Y+354us56uLIDEwIOe6v+eoiyArIOeLrOeriyBCYXJyaWVy77yM5LqS5LiN5bmy5omw44CCCiAgICAgICAg6L+U5ZueIHthY2NvdW50X2xhYmVsOiBib29sfQogICAgICAgIA==')
+        _o0 = self.threads_per_account * self.num_accounts
+        _IlI(_oOI(_B(b'PQ==') * 60, _B(b'Qw==')))
+        _IlI(_oOI(_B(b'ICDlsI/ompUgU1ZJUDYg5YWN5Y2V5Yi4IC0g5aSa6LSm5Y+35bm25Y+R5oqi5Yi4'), _B(b'Qw=='), _B(b'Qk9MRA==')))
+        _IlI(_oOI(_B(b'ICDotKblj7fmlbA6IA==') + str(self.num_accounts) + _B(b'ICB8ICDmr4/otKblj7fnur/nqIs6IA==') + str(self.threads_per_account) + _B(b'ICB8ICDmgLvnur/nqIs6IA==') + str(_o0), _B(b'Qw==')))
+        _IlI(_oOI(_B(b'PQ==') * 60, _B(b'Qw==')))
+        _IlI()
+        _IlI(_oOI(_B(b'4pSM4pSAIFsxLzZdIOagoeWHhuacjeWKoeWZqOaXtumXtA=='), _B(b'Qg=='), _B(b'Qk9MRA==')))
+        (_o11, _0llI) = _ooo0()
+        _IlI(_B(b'4pSCICDmnI3liqHlmajlgY/lt646IA==') + format(_o11 * 1000, _B(b'Ky4wZg==')) + _B(b'bXMgIFJUVDog') + format(_0llI * 1000, _B(b'LjBm')) + _B(b'bXM='))
+        _IlI(_oOI(_B(b'4pSc4pSAIFsyLzZdIOafpeivouWQhOi0puWPt+a0u+WKqOeKtuaAgQ=='), _B(b'Qg=='), _B(b'Qk9MRA==')))
+        _0O1 = None
+        for _oI in self.grabbers:
+            _01I0 = _oI.account
+            _OIll = _Io()
+            (_O1l, _IO, _ooO) = _OOO(_OIll, _01I0)
+            if _ooO and (not _0O1):
+                _0O1 = _ooO
+            _Io0I = _B(b'4pyF') if _IO > 0 else _B(b'4pqg77iP') if _IO == 0 else _B(b'4p2T')
+            _I1lo = _B(b'Rw==') if _IO > 0 else _B(b'WQ==')
+            _oI._log(_B(b'5bqT5a2YOiA=') + str(_oOI(str(_IO), _I1lo)) + _B(b'ICA=') + str(_Io0I))
+        _IlI(_oOI(_B(b'4pSc4pSAIFszLzZdIOiuoeeul+ebruagh+aXtumXtA=='), _B(b'Qg=='), _B(b'Qk9MRA==')))
         try:
-            target_dt = parse_target_time(target_time_str)
+            _I0 = _o0I(_ol)
         except ValueError:
-            if shared_start_time:
-                target_dt = datetime.fromtimestamp(shared_start_time)
+            if _0O1:
+                _I0 = datetime.fromtimestamp(_0O1)
             else:
-                target_dt = parse_target_time("14:00")
-        target_ts = target_dt.timestamp()
-        ts_print(f"│  目标: {target_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-        ts_print(f"│  提前: {advance_ms}ms | "
-                f"发射: {(target_dt - timedelta(milliseconds=advance_ms)).strftime('%H:%M:%S.%f')[:-3]}")
-
-        # ── 4. 启动所有线程（每个账号独立 Barrier） ──
-        ts_print(colored("├─ [4/6] 启动并发线程", "B", "BOLD"))
-        ts_print(f"│  {self.num_accounts} 个账号, 每账号 {self.threads_per_account} 线程, "
-                f"共 {total_workers} 线程")
-
-        all_workers = []
-        account_barriers: list[threading.Barrier] = []
-        account_ready_counters = []
-        account_ready_locks = []
-
-        for grabber in self.grabbers:
-            ready_counter = [0]
-            ready_lock = threading.Lock()
-            barrier = threading.Barrier(self.threads_per_account + 1, timeout=30)
-
-            account_ready_counters.append(ready_counter)
-            account_ready_locks.append(ready_lock)
-            account_barriers.append(barrier)
-
-            for t in range(self.threads_per_account):
-                w = threading.Thread(
-                    target=grabber._worker,
-                    args=(t + 1, ready_counter, ready_lock,
-                          barrier, server_offset, target_ts, advance_ms),
-                    daemon=True,
-                    name=f"grab-{grabber.account.label}-t{t+1}",
-                )
-                w.start()
-                all_workers.append(w)
-
-        # 等待所有账号就绪
-        ts_print("│  等待所有线程就绪...")
-        deadline = time.time() + 20
-        total_ready = 0
-        while total_ready < total_workers and time.time() < deadline:
-            total_ready = sum(c[0] for c in account_ready_counters)
+                _I0 = _o0I(_B(b'MTQ6MDA='))
+        _1o1O = _I0.timestamp()
+        _IlI(_B(b'4pSCICDnm67moIc6IA==') + str(_I0.strftime(_B(b'JVktJW0tJWQgJUg6JU06JVM='))))
+        _IlI(_B(b'4pSCICDmj5DliY06IA==') + str(_ll0O) + _B(b'bXMgfCDlj5HlsIQ6IA==') + str((_I0 - timedelta(milliseconds=_ll0O)).strftime(_B(b'JUg6JU06JVMuJWY='))[:-3]))
+        _IlI(_oOI(_B(b'4pSc4pSAIFs0LzZdIOWQr+WKqOW5tuWPkee6v+eoiw=='), _B(b'Qg=='), _B(b'Qk9MRA==')))
+        _IlI(_B(b'4pSCICA=') + str(self.num_accounts) + _B(b'IOS4qui0puWPtywg5q+P6LSm5Y+3IA==') + str(self.threads_per_account) + _B(b'IOe6v+eoiywg5YWxIA==') + str(_o0) + _B(b'IOe6v+eoiw=='))
+        _Oo = []
+        _101: list[threading.Barrier] = []
+        _OO = []
+        _1OI = []
+        for _oI in self.grabbers:
+            _llO = [0]
+            _10 = threading.Lock()
+            _1I11 = threading.Barrier(self.threads_per_account + 1, timeout=30)
+            _OO.append(_llO)
+            _1OI.append(_10)
+            _101.append(_1I11)
+            for _oO in range(self.threads_per_account):
+                _O01 = threading.Thread(_0o1I=_oI._worker, args=(_oO + 1, _llO, _10, _1I11, _o11, _1o1O, _ll0O), daemon=True, name=_B(b'Z3JhYi0=') + str(_oI.account.label) + _B(b'LXQ=') + str(_oO + 1))
+                _O01.start()
+                _Oo.append(_O01)
+        _IlI(_B(b'4pSCICDnrYnlvoXmiYDmnInnur/nqIvlsLHnu6ouLi4='))
+        _1IO = time.time() + 20
+        _O1I = 0
+        while _O1I < _o0 and time.time() < _1IO:
+            _O1I = sum((_OII[0] for _OII in _OO))
             time.sleep(0.05)
-
-        if total_ready < total_workers:
-            ts_print(colored(f"│  ⚠️ 仅 {total_ready}/{total_workers} 线程就绪", "Y"))
-
-        # 每个账号的就绪情况
-        for i, grabber in enumerate(self.grabbers):
-            ready = account_ready_counters[i][0]
-            expected = self.threads_per_account
-            ok_str = colored("✓", "G") if ready >= expected else colored("✗", "R")
-            grabber._log(f"就绪: {ok_str} {ready}/{expected}")
-
-        # ── 5. 精确等待 → 发射 ──
-        ts_print(colored("├─ [5/6] 等待发射时刻...", "B", "BOLD"))
-
-        pre_fire = target_ts - advance_ms / 1000.0 - 0.05
-        last_log = 0
+        if _O1I < _o0:
+            _IlI(_oOI(_B(b'4pSCICDimqDvuI8g5LuFIA==') + str(_O1I) + _B(b'Lw==') + str(_o0) + _B(b'IOe6v+eoi+Wwsee7qg=='), _B(b'WQ==')))
+        for (_OIlO, _oI) in enumerate(self.grabbers):
+            _oo0 = _OO[_OIlO][0]
+            _o00 = self.threads_per_account
+            _lIo1 = _oOI(_B(b'4pyT'), _B(b'Rw==')) if _oo0 >= _o00 else _oOI(_B(b'4pyX'), _B(b'Ug=='))
+            _oI._log(_B(b'5bCx57uqOiA=') + str(_lIo1) + _B(b'IA==') + str(_oo0) + _B(b'Lw==') + str(_o00))
+        _IlI(_oOI(_B(b'4pSc4pSAIFs1LzZdIOetieW+heWPkeWwhOaXtuWIuy4uLg=='), _B(b'Qg=='), _B(b'Qk9MRA==')))
+        _l00O = _1o1O - _ll0O / 1000.0 - 0.05
+        _0o = 0
         while True:
-            now = get_calibrated_time(server_offset)
-            remaining = pre_fire - now
-            if remaining <= 0:
+            _OOoO = _00(_o11)
+            _lI = _l00O - _OOoO
+            if _lI <= 0:
                 break
-            if remaining > 1 and int(remaining) != last_log:
-                last_log = int(remaining)
-                ts_print(colored(f"│  倒计时: {last_log} 秒...", "W"))
-            if remaining > 0.1:
-                time.sleep(min(remaining - 0.05, 1))
-
-        ts_print(colored("├─ [6/6] 🚀 发射! (所有账号同时)", "R", "BOLD"))
-
-        # 所有账号的 Barrier 同时释放
-        for i, barrier in enumerate(account_barriers):
+            if _lI > 1 and int(_lI) != _0o:
+                _0o = int(_lI)
+                _IlI(_oOI(_B(b'4pSCICDlgJLorqHml7Y6IA==') + str(_0o) + _B(b'IOenki4uLg=='), _B(b'Vw==')))
+            if _lI > 0.1:
+                time.sleep(min(_lI - 0.05, 1))
+        _IlI(_oOI(_B(b'4pSc4pSAIFs2LzZdIPCfmoAg5Y+R5bCEISAo5omA5pyJ6LSm5Y+35ZCM5pe2KQ=='), _B(b'Ug=='), _B(b'Qk9MRA==')))
+        for (_OIlO, _1I11) in enumerate(_101):
             try:
-                barrier.wait()
+                _1I11.wait()
             except threading.BrokenBarrierError:
-                grabber = self.grabbers[i]
-                grabber._log(colored("⚠️ Barrier 超时", "Y"))
+                _oI = self.grabbers[_OIlO]
+                _oI._log(_oOI(_B(b'4pqg77iPIEJhcnJpZXIg6LaF5pe2'), _B(b'WQ==')))
+        for _O01 in _Oo:
+            _O01.join(timeout=HTTP_TIMEOUT + 3)
+        _IlI()
+        _IlI(_oOI(_B(b'4pWQ') * 60, _B(b'Qw==')))
+        _IlI(_oOI(_B(b'ICDmiqLliLjnu5Pmnpw='), _B(b'Qw=='), _B(b'Qk9MRA==')))
+        _oIo = {}
+        _II = []
+        for _oI in self.grabbers:
+            _01I0 = _oI.account
+            _ooO0 = _oI.results
+            _0oO1 = [_0I for _0I in _ooO0 if _0I.success]
+            _oo01 = [_0I for _0I in _ooO0 if not _0I.success]
+            _oIo[_01I0.label] = len(_0oO1) > 0
+            _o1Ol = _oOI(_B(b'4pyFIOaIkOWKnyE='), _B(b'Rw=='), _B(b'Qk9MRA==')) if _0oO1 else _oOI(_B(b'4p2MIOWksei0pQ=='), _B(b'Ug=='))
+            _oI._log(str(_o1Ol) + _B(b'ICB8ICDmiJDlip8g') + str(len(_0oO1)) + _B(b'Lw==') + str(len(_ooO0)))
+            if _0oO1:
+                for _0I in _0oO1:
+                    _oI._log(_B(b'ICA=') + str(_oOI(_B(b'4pyT'), _B(b'Rw=='))) + _B(b'IFQ=') + format(_0I.thread_id, _B(b'MmQ=')) + _B(b'IA==') + str(_oOI(format(_0I.latency_ms, _B(b'NS4wZg==')) + _B(b'bXM='), _B(b'Rw=='))) + _B(b'ICA=') + str(_0I.message))
+            if _oo01:
+                _lOo = defaultdict(list)
+                for _0I in _oo01:
+                    _lOo[_0I.message].append(_0I.thread_id)
+                for (_l1O, _0O) in _lOo.items():
+                    _oo1O = _B(b'LA==').join((str(_oO) for _oO in _0O[:4]))
+                    _Iolo = _B(b'ICs=') + str(len(_0O) - 4) if len(_0O) > 4 else ''
+                    _oI._log(_B(b'ICA=') + str(_oOI(_B(b'4pyX'), _B(b'Ug=='))) + _B(b'IFs=') + str(_oo1O) + str(_Iolo) + _B(b'XSAg') + str(_l1O))
+            _11l = [_0I.latency_ms for _0I in _ooO0 if _0I.latency_ms > 0]
+            if _11l:
+                _oI._log(_B(b'ICDlu7bov586IOacgOW/qyA=') + format(min(_11l), _B(b'LjBm')) + _B(b'bXMgIOacgOaFoiA=') + format(max(_11l), _B(b'LjBm')) + _B(b'bXMgIOW5s+WdhyA=') + format(sum(_11l) / len(_11l), _B(b'LjBm')) + _B(b'bXM='))
+                _II.extend(_11l)
+        if _II:
+            _IlI(_oOI(_B(b'ICDlhajlsYDlu7bov586IOacgOW/qyA=') + format(min(_II), _B(b'LjBm')) + _B(b'bXMgIOacgOaFoiA=') + format(max(_II), _B(b'LjBm')) + _B(b'bXMgIOW5s+WdhyA=') + format(sum(_II) / len(_II), _B(b'LjBm')) + _B(b'bXM='), _B(b'Vw==')))
+        _IlI(_oOI(_B(b'4pWQ') * 60, _B(b'Qw==')))
+        _OlII = sum((1 for _IOoO in _oIo.values() if _IOoO))
+        _IlI(_oOI(_B(b'ICDmsYfmgLs6IA==') + str(_OlII) + _B(b'Lw==') + str(self.num_accounts) + _B(b'IOi0puWPt+aKouWIuOaIkOWKnw=='), _B(b'Rw==') if _OlII > 0 else _B(b'Ug=='), _B(b'Qk9MRA==')))
+        return _oIo
 
-        # 等待全部完成
-        for w in all_workers:
-            w.join(timeout=HTTP_TIMEOUT + 3)
-
-        # ── 6. 输出结果 ──
-        ts_print()
-        ts_print(colored("═" * 60, "C"))
-        ts_print(colored("  抢券结果", "C", "BOLD"))
-
-        account_success = {}
-        all_latencies = []
-
-        for grabber in self.grabbers:
-            acc = grabber.account
-            results = grabber.results
-            success = [r for r in results if r.success]
-            fail = [r for r in results if not r.success]
-            account_success[acc.label] = len(success) > 0
-
-            status = (colored("✅ 成功!", "G", "BOLD") if success
-                     else colored("❌ 失败", "R"))
-            grabber._log(
-                f"{status}  |  "
-                f"成功 {len(success)}/{len(results)}",
-            )
-
-            if success:
-                for r in success:
-                    grabber._log(
-                        f"  {colored('✓', 'G')} T{r.thread_id:2d} "
-                        f"{colored(f'{r.latency_ms:5.0f}ms', 'G')}  {r.message}",
-                    )
-
-            if fail:
-                fail_msgs = defaultdict(list)
-                for r in fail:
-                    fail_msgs[r.message].append(r.thread_id)
-                for msg, tids in fail_msgs.items():
-                    tid_str = ",".join(str(t) for t in tids[:4])
-                    more = f" +{len(tids)-4}" if len(tids) > 4 else ""
-                    grabber._log(
-                        f"  {colored('✗', 'R')} [{tid_str}{more}]  {msg}",
-                    )
-
-            lats = [r.latency_ms for r in results if r.latency_ms > 0]
-            if lats:
-                grabber._log(
-                    f"  延迟: 最快 {min(lats):.0f}ms  "
-                    f"最慢 {max(lats):.0f}ms  "
-                    f"平均 {sum(lats)/len(lats):.0f}ms",
-                )
-                all_latencies.extend(lats)
-
-        if all_latencies:
-            ts_print(colored(
-                f"  全局延迟: 最快 {min(all_latencies):.0f}ms  "
-                f"最慢 {max(all_latencies):.0f}ms  "
-                f"平均 {sum(all_latencies)/len(all_latencies):.0f}ms",
-                "W",
-            ))
-
-        ts_print(colored("═" * 60, "C"))
-
-        total_success = sum(1 for v in account_success.values() if v)
-        ts_print(colored(
-            f"  汇总: {total_success}/{self.num_accounts} 账号抢券成功",
-            "G" if total_success > 0 else "R",
-            "BOLD",
-        ))
-
-        return account_success
-
-
-
-# ── 主入口 ───────────────────────────────────────────────
+    def _Ool(self, _OOOI: str=TARGET_TIME, _ll0O: int=ADVANCE_MS):
+        _IlI(_oOI(_B(b'6L+b5YWl5b6q546v5qih5byP77yM5oyJIEN0cmwrQyDpgIDlh7o='), _B(b'WQ=='), _B(b'Qk9MRA==')))
+        _1l0O = 0
+        while True:
+            try:
+                _I0 = _o0I(_OOOI)
+                _o1I = (_I0 - datetime.now()).total_seconds()
+                if _o1I > 60:
+                    _IlI(_oOI(_B(b'CuS4i+S4gOWcujog') + str(_I0.strftime(_B(b'JUg6JU06JVM='))) + _B(b'ICg=') + format(_o1I / 60, _B(b'LjBm')) + _B(b'IOWIhumSn+WQjik='), _B(b'Qw==')))
+                _1l0O += 1
+                _IlI(_oOI(_B(b'Cg==') + str(_B(b'4pSA') * 45) + _B(b'CiAg56ysIA==') + str(_1l0O) + _B(b'IOasoeaKouWIuAo=') + str(_B(b'4pSA') * 45), _B(b'TQ==')))
+                self.run(_ol=_OOOI, _ll0O=_ll0O)
+                time.sleep(30)
+            except KeyboardInterrupt:
+                _IlI(_oOI(_B(b'CueUqOaIt+S4reaWrQ=='), _B(b'WQ==')))
+                break
 
 def main():
-    ts_print(colored("饱了么脚本交流群：476250706", "C", "BOLD"))
-    ts_print()
-    ts_print(colored(
-        "免责声明：本脚本仅供学习和技术研究使用，请遵守平台规则",
-        "D",
-    ))
-    ts_print(colored(
-        "因使用本脚本产生的风险由使用者自行承担",
-        "D",
-    ))
-    ts_print()
-
-    cookie_text = os.getenv(COOKIE_ENV, "").strip()
-    if not cookie_text:
-        ts_print(colored(f"❌ 请设置环境变量 {COOKIE_ENV}", "R"))
-        ts_print(colored("   Windows: set xcplus=x-vayne#x-teemo#x-sivir", "W"))
-        ts_print(colored("   Mac/Linux: export xcplus=\"uid#sid#jwt\"", "W"))
-        ts_print(colored("   多账号: 用 @ 分隔", "W"))
-        ts_print(colored("   示例: uid1#sid1#jwt1@uid2#sid2#jwt2", "W"))
-        ts_print()
-        ts_print(colored("   如何获取?", "C", "BOLD"))
-        ts_print(colored("   1. Fiddler/Charles/Stream 抓包", "W"))
-        ts_print(colored("   2. 找 gw.xiaocantech.com 的任意请求", "W"))
-        ts_print(colored("   3. 复制 x-vayne, x-teemo, x-sivir 请求头值", "W"))
-        ts_print(colored("   4. 用 # 连接: 3489934#827932404#eyJ...", "W"))
+    _IlI(_oOI(_B(b'5YWN6LSj5aOw5piO77ya5pys6ISa5pys5LuF5L6b5a2m5Lmg5ZKM5oqA5pyv56CU56m25L2/55So77yM6K+36YG15a6I5bmz5Y+w6KeE5YiZ'), _B(b'RA==')))
+    _IlI(_oOI(_B(b'5Zug5L2/55So5pys6ISa5pys5Lqn55Sf55qE6aOO6Zmp55Sx5L2/55So6ICF6Ieq6KGM5om/5ouF'), _B(b'RA==')))
+    _IlI()
+    _IOl = _B(b'LS1sb29w') in sys.argv
+    _1I = os.getenv(COOKIE_ENV, '').strip()
+    if not _1I:
+        _IlI(_oOI(_B(b'4p2MIOivt+iuvue9rueOr+Wig+WPmOmHjyA=') + str(COOKIE_ENV), _B(b'Ug==')))
+        _IlI(_oOI(_B(b'ICAgV2luZG93czogc2V0IHhjcGx1cz3lpIfms6gjdWlkI3NpZCNqd3Q='), _B(b'Vw==')))
+        _IlI(_oOI(_B(b'ICAgTWFjL0xpbnV4OiBleHBvcnQgeGNwbHVzPSLlpIfms6gjdWlkI3NpZCNqd3Qi'), _B(b'Vw==')))
+        _IlI(_oOI(_B(b'ICAg5aSa6LSm5Y+3OiDnlKggQCDmiJbmjaLooYzliIbpmpQ='), _B(b'Vw==')))
+        _IlI(_oOI(_B(b'ICAg56S65L6LOiDlsI/mmI4jdWlkMSNzaWQxI2p3dDFA5bCP57qiI3VpZDIjc2lkMiNqd3Qy'), _B(b'Vw==')))
+        _IlI()
+        _IlI(_oOI(_B(b'ICAg5aaC5L2V6I635Y+WPw=='), _B(b'Qw=='), _B(b'Qk9MRA==')))
+        _IlI(_oOI(_B(b'ICAgMS4gRmlkZGxlci9DaGFybGVzL1N0cmVhbSDmipPljIU='), _B(b'Vw==')))
+        _IlI(_oOI(_B(b'ICAgMi4g5om+IGd3LnhpYW9jYW50ZWNoLmNvbSDnmoTku7vmhI/or7fmsYI='), _B(b'Vw==')))
+        _IlI(_oOI(_B(b'ICAgMy4g5aSN5Yi2IHgtdmF5bmUsIHgtdGVlbW8sIHgtc2l2aXIg6K+35rGC5aS05YC8'), _B(b'Vw==')))
+        _IlI(_oOI(_B(b'ICAgNC4g55SoICMg6L+e5o6lOiDlsI/mmI4jMzQ4OTkzNCM4Mjc5MzI0MDQjZXlKLi4u'), _B(b'Vw==')))
         sys.exit(1)
-
     try:
-        accounts = parse_accounts(cookie_text)
+        _IoIl = _lO1(_1I)
     except ValueError as e:
-        ts_print(colored(f"❌ 解析失败: {e}", "R"))
+        _IlI(_oOI(_B(b'4p2MIOino+aekOWksei0pTog') + str(e), _B(b'Ug==')))
         sys.exit(1)
-
-    threads_per = min(THREADS_PER_ACCOUNT, 50)
-    actual_total = threads_per * len(accounts)
-
-    ts_print(colored(f"账号: {len(accounts)} | 每账号线程: {threads_per} | "
-                     f"总线程: {actual_total} | 目标: {TARGET_TIME}",
-                     "C"))
-    ts_print()
-
-    grabber = MultiAccountGrabber(accounts, threads_per)
-
+    _IoI1 = min(THREADS_PER_ACCOUNT, 50)
+    _lO0I = _IoI1 * len(_IoIl)
+    _IlI(_oOI(_B(b'6LSm5Y+3OiA=') + str(len(_IoIl)) + _B(b'IHwg5q+P6LSm5Y+357q/56iLOiA=') + str(_IoI1) + _B(b'IHwg5oC757q/56iLOiA=') + str(_lO0I) + _B(b'IHwg55uu5qCHOiA=') + str(TARGET_TIME), _B(b'Qw==')))
+    _IlI()
+    _oI = MultiAccountGrabber(_IoIl, _IoI1)
     try:
-        grabber.run()
+        if _IOl:
+            _oI.loop()
+        else:
+            _oI.run()
     except KeyboardInterrupt:
-        ts_print(colored("\n用户中断", "Y"))
+        _IlI(_oOI(_B(b'CueUqOaIt+S4reaWrQ=='), _B(b'WQ==')))
     except Exception as e:
-        ts_print(colored(f"❌ 异常: {e}", "R"))
+        _IlI(_oOI(_B(b'4p2MIOW8guW4uDog') + str(e), _B(b'Ug==')))
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
-
-if __name__ == "__main__":
+if __name__ == _B(b'X19tYWluX18='):
     main()

@@ -95,39 +95,88 @@ def build_ua(profile):
     return f"netdisk;{profile['app_version']};{profile['model']};android-android;{profile['android_version']};JSbridge4.4.0;jointBridge;1.1.0;"
 
 
-# ============ Cookies 文件读写 ============
+# ============ Cookies 文件读写（多账号版本）============
 
-def load_cookies():
-    """从本地文件加载 cookies，返回 auth 字典或 None"""
+def load_all_accounts():
+    """从本地文件加载所有账号，返回账号列表"""
     cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.json")
     if not os.path.exists(cookies_file):
-        return None
+        return []
     try:
         with open(cookies_file, "r", encoding="utf-8") as f:
-            auth = json.load(f)
-        # 检查必要字段
-        required = ["BDUSS", "STOKEN", "CSRF_TOKEN", "PANPSC", "BAIDUID"]
-        for key in required:
-            if not auth.get(key):
-                return None
-        # 如果缺少设备配置文件，生成随机值
-        if not auth.get("device_profile"):
-            auth["device_profile"] = generate_device_profile()
-        if not auth.get("ND_FTID"):
-            auth["ND_FTID"] = generate_nd_ftid()
-        if not auth.get("DEVUID"):
-            auth["DEVUID"] = generate_devuid(auth["device_profile"])
-        return auth
+            data = json.load(f)
+        accounts = data.get("accounts", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        return [_ensure_account_fields(acc) for acc in accounts if _validate_account(acc)]
     except (json.JSONDecodeError, IOError):
-        return None
+        return []
 
 
-def save_cookies(auth):
-    """保存 cookies 到本地文件"""
+def _validate_account(auth):
+    """验证账号是否有必要字段"""
+    required = ["BDUSS", "STOKEN", "CSRF_TOKEN", "PANPSC", "BAIDUID"]
+    valid = all(auth.get(key) for key in required)
+    # 确保有UK字段（旧数据可能没有）
+    if valid and not auth.get("UK"):
+        auth["UK"] = ""
+    if valid and not auth.get("USERNAME"):
+        auth["USERNAME"] = auth.get("NICKNAME", "")
+    return valid
+
+
+def _ensure_account_fields(auth):
+    """确保账号有所有必要字段"""
+    if not auth.get("device_profile"):
+        auth["device_profile"] = generate_device_profile()
+    if not auth.get("ND_FTID"):
+        auth["ND_FTID"] = generate_nd_ftid()
+    if not auth.get("DEVUID"):
+        auth["DEVUID"] = generate_devuid(auth["device_profile"])
+    if "REFERER" not in auth:
+        channel = build_channel(auth.get("device_profile", {}))
+        version = auth.get("device_profile", {}).get("app_version", "13.25.2")
+        auth["REFERER"] = f"{BASE_URL}/aipan/claw/home?devuid={auth['DEVUID']}&clienttype=1&channel={channel}&version={version}"
+    return auth
+
+
+def save_all_accounts(accounts):
+    """保存所有账号到本地文件"""
     cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.json")
     with open(cookies_file, "w", encoding="utf-8") as f:
-        json.dump(auth, f, indent=2, ensure_ascii=False)
-    print(f"Cookies 已保存到: {cookies_file}")
+        json.dump({"accounts": accounts}, f, indent=2, ensure_ascii=False)
+    print(f"已保存 {len(accounts)} 个账号到: {cookies_file}")
+
+
+def add_account(new_auth):
+    """添加新账号（以UK为索引，避免重复）"""
+    accounts = load_all_accounts()
+    uk = new_auth.get("UK", "")
+    baiduid = new_auth.get("BAIDUID", "")
+    
+    # 优先用UK匹配，其次用BAIDUID匹配
+    for i, acc in enumerate(accounts):
+        if (uk and acc.get("UK") == uk) or (baiduid and acc.get("BAIDUID") == baiduid):
+            # 更新现有账号
+            accounts[i] = _ensure_account_fields(new_auth)
+            save_all_accounts(accounts)
+            print(f"账号 UK:{uk} 已更新")
+            return
+    
+    # 添加新账号
+    accounts.append(_ensure_account_fields(new_auth))
+    save_all_accounts(accounts)
+    print(f"新账号 UK:{uk} 已添加")
+
+
+def remove_account(key):
+    """删除指定账号（支持UK或用户名）"""
+    accounts = load_all_accounts()
+    before = len(accounts)
+    accounts = [acc for acc in accounts if acc.get("UK") != key and acc.get("USERNAME") != key]
+    save_all_accounts(accounts)
+    if len(accounts) < before:
+        print(f"账号 {key} 已删除")
+    else:
+        print(f"未找到账号 {key}")
 
 
 # ============ 二维码登录 ============
@@ -361,7 +410,7 @@ def qr_login():
     # 生成设备配置文件
     device_profile = generate_device_profile()
 
-    return {
+    auth_info = {
         "BDUSS": real_bduss,
         "STOKEN": pan_stoken or real_stoken or "",
         "CSRF_TOKEN": csrf_token or "",
@@ -369,6 +418,21 @@ def qr_login():
         "BAIDUID": baiduid or "",
         "device_profile": device_profile,
     }
+
+    # 获取 UK 和用户名
+    info_session = requests.Session()
+    account_info = get_account_info(info_session, _ensure_account_fields(auth_info.copy()))
+    if account_info:
+        auth_info["UK"] = account_info["uk"]
+        auth_info["USERNAME"] = account_info["username"]
+        print(f"UK: {account_info['uk']}")
+        print(f"用户名: {account_info['username']}")
+    else:
+        auth_info["UK"] = ""
+        auth_info["USERNAME"] = ""
+        print("获取UK和用户名失败")
+
+    return auth_info
 
 
 # ============ AI 对话 ============
@@ -493,6 +557,32 @@ def send_chat(session, auth, chat_id, query_id, question):
     return full_reply
 
 
+def get_account_info(session, auth):
+    """获取账号信息（UK、用户名），返回 dict 或 None"""
+    url = f"{BASE_URL}/rest/2.0/xpan/nas"
+    params = {"method": "uinfo"}
+    cookies = build_cookies(auth)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": f"{BASE_URL}/",
+        "Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+    }
+    try:
+        resp = session.get(url, params=params, headers=headers, timeout=10)
+        data = resp.json()
+        if data.get("errno") == 0:
+            return {
+                "uk": str(data.get("uk", "")),
+                "username": data.get("baidu_name", "") or data.get("username", ""),
+            }
+        else:
+            print(f"uinfo 返回: {data}")
+    except Exception as e:
+        print(f"获取账号信息失败: {e}")
+    return None
+
+
 def check_cookies_valid(session, auth):
     """验证 cookies 是否有效，返回 True/False"""
     url = f"{BASE_URL}/aisearch/agent/history/chatlist"
@@ -516,7 +606,99 @@ def check_cookies_valid(session, auth):
         return False
 
 
+def process_account(auth, index, total):
+    """处理单个账号的保活"""
+    uk = auth.get("UK", "")
+    username = auth.get("USERNAME", "")
+    print(f"\n{'='*60}")
+    print(f"账号 [{index}/{total}] 用户名: {username}  UK: {uk}")
+    print(f"{'='*60}")
+    
+    # 验证 cookies 是否有效
+    session = requests.Session()
+    session.cookies.update(build_cookies(auth))
+    
+    print("验证 Cookies 有效性...")
+    if not check_cookies_valid(session, auth):
+        print("Cookies 已失效！")
+        return False, auth
+    
+    print("Cookies 有效！")
+    
+    # 如果缺少UK，自动补充获取
+    if not auth.get("UK"):
+        info = get_account_info(session, auth)
+        if info:
+            auth["UK"] = info["uk"]
+            auth["USERNAME"] = info["username"]
+            print(f"已补充 用户名: {info['username']}  UK: {info['uk']}")
+    
+    # 随机选择问题，附加时间戳
+    question = random.choice(QUESTIONS)
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    full_question = f"{question}（{ts}）"
+    print(f"提问: {full_question}")
+    
+    # 获取 chat_id
+    chats = get_chat_list(session, auth)
+    if chats:
+        chat_id = chats[0].get("chat_id")
+    else:
+        chat_id = hashlib.sha1(f"{auth['DEVUID']}{int(time.time())}".encode()).hexdigest()
+    
+    # 分配 query_id
+    query_id = allocate_query_id(session, auth, chat_id)
+    if not query_id:
+        print("[ERROR] 分配 query_id 失败")
+        return False, auth
+    
+    # 发送对话
+    print("等待回复...")
+    reply = send_chat(session, auth, chat_id, query_id, full_question)
+    
+    # 输出完整回复
+    if reply:
+        print(f"\n{'='*50}")
+        print(reply[:200] + "..." if len(reply) > 200 else reply)
+        print(f"{'='*50}")
+        return True, auth
+    else:
+        print("[ERROR] 未获取到回复")
+        return False, auth
+
+
+def add_new_account():
+    """添加新账号"""
+    print("\n" + "=" * 60)
+    print("添加新账号")
+    print("=" * 60)
+    
+    result = qr_login()
+    if not result:
+        print("登录失败")
+        return False
+    
+    new_auth = {
+        "BDUSS": result["BDUSS"],
+        "STOKEN": result["STOKEN"],
+        "CSRF_TOKEN": result["CSRF_TOKEN"],
+        "PANPSC": result["PANPSC"],
+        "BAIDUID": result["BAIDUID"],
+        "UK": result.get("UK", ""),
+        "USERNAME": result.get("USERNAME", ""),
+        "device_profile": result["device_profile"],
+        "ND_FTID": generate_nd_ftid(),
+        "DEVUID": generate_devuid(result["device_profile"]),
+    }
+    
+    add_account(new_auth)
+    print(f"\n账号添加成功！用户名: {new_auth['USERNAME']} UK: {new_auth['UK']}")
+    return True
+
+
 def main():
+    import sys
+    
     # 免责声明
     print("=" * 60)
     print("免责声明")
@@ -527,106 +709,79 @@ def main():
     print("如有侵权请联系删除。")
     print("=" * 60)
     print("")
-    
-    # 1. 检查本地 cookies 文件
-    auth = load_cookies()
-    if auth:
-        print("从本地文件加载 Cookies...")
-        print(f"  BDUSS: {auth['BDUSS'][:20]}...")
-        print(f"  STOKEN: {auth['STOKEN'][:20]}...")
-        print(f"  BAIDUID: {auth['BAIDUID']}")
+    print("用法：")
+    print("  python 百度保活.py          # 保活所有账号")
+    print("  python 百度保活.py add      # 添加新账号")
+    print("  python 百度保活.py list     # 列出所有账号")
+    print("  python 百度保活.py remove <UK或用户名>  # 删除指定账号")
+    print("")
 
-        # 确保 REFERER 存在（使用设备配置）
-        if "REFERER" not in auth:
-            channel = build_channel(auth.get("device_profile", {}))
-            version = auth.get("device_profile", {}).get("app_version", "13.25.2")
-            auth["REFERER"] = f"{BASE_URL}/aipan/claw/home?devuid={auth['DEVUID']}&clienttype=1&channel={channel}&version={version}"
-
-        # 验证 cookies 是否有效
-        session = requests.Session()
-        session.cookies.update(build_cookies(auth))
-        print("验证 Cookies 有效性...")
-        if check_cookies_valid(session, auth):
-            print("Cookies 有效！")
-            print("")
-        else:
-            print("Cookies 已失效，删除文件并重新登录...")
-            cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.json")
-            if os.path.exists(cookies_file):
-                os.remove(cookies_file)
-            auth = None
-    else:
-        auth = None
-
-    # 2. 无有效 cookies，走二维码登录
-    if not auth:
-        print("启动二维码登录...")
-        print("")
-        result = qr_login()
-        if not result:
+    # 命令行参数处理
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1].lower()
+        
+        if cmd in ["add", "login", "new"]:
+            # 添加新账号
+            add_new_account()
             return
-
-        auth = {
-            "BDUSS": result["BDUSS"],
-            "STOKEN": result["STOKEN"],
-            "CSRF_TOKEN": result["CSRF_TOKEN"],
-            "PANPSC": result["PANPSC"],
-            "BAIDUID": result["BAIDUID"],
-            "device_profile": result["device_profile"],
-            "ND_FTID": generate_nd_ftid(),
-            "DEVUID": generate_devuid(result["device_profile"]),
-        }
-        channel = build_channel(auth["device_profile"])
-        version = auth["device_profile"]["app_version"]
-        auth["REFERER"] = f"{BASE_URL}/aipan/claw/home?devuid={auth['DEVUID']}&clienttype=1&channel={channel}&version={version}"
-
-        print(f"\n登录成功！")
-        print(f"  BDUSS: {auth['BDUSS'][:20]}...")
-        print(f"  STOKEN: {auth['STOKEN'][:20]}...")
-        print(f"  CSRF_TOKEN: {auth['CSRF_TOKEN']}")
-        print(f"  PANPSC: {auth['PANPSC'][:20]}...")
-        print(f"  BAIDUID: {auth['BAIDUID']}")
-        print(f"  设备型号: {auth['device_profile']['model']}")
-        print(f"  Android版本: {auth['device_profile']['android_version']}")
-        print(f"  应用版本: {auth['device_profile']['app_version']}")
-        print(f"  DEVUID: {auth['DEVUID']}")
-
-        # 保存 cookies 到本地
-        save_cookies(auth)
-        print("")
-
-        session = requests.Session()
-        session.cookies.update(build_cookies(auth))
-
-    # 1. 随机选择问题，附加时间戳
-    question = random.choice(QUESTIONS)
-    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    full_question = f"{question}（{ts}）"
-    print(f"提问: {full_question}")
-
-    # 2. 获取 chat_id
-    chats = get_chat_list(session, auth)
-    if chats:
-        chat_id = chats[0].get("chat_id")
-    else:
-        chat_id = hashlib.sha1(f"{auth['DEVUID']}{int(time.time())}".encode()).hexdigest()
-
-    # 3. 分配 query_id
-    query_id = allocate_query_id(session, auth, chat_id)
-    if not query_id:
+        
+        elif cmd in ["list", "ls"]:
+            # 列出所有账号
+            accounts = load_all_accounts()
+            print(f"\n共有 {len(accounts)} 个账号：")
+            for i, acc in enumerate(accounts, 1):
+                uk = acc.get("UK", "N/A")
+                username = acc.get("USERNAME", "")
+                print(f"  [{i}] 用户名: {username}  UK: {uk}")
+            return
+        
+        elif cmd in ["remove", "rm", "delete", "del"]:
+            # 删除账号
+            accounts = load_all_accounts()
+            if len(sys.argv) < 3:
+                print("用法: python 百度保活.py remove <UK或用户名>")
+                print("\n当前账号：")
+                for i, acc in enumerate(accounts, 1):
+                    uk = acc.get("UK", "N/A")
+                    username = acc.get("USERNAME", "")
+                    print(f"  [{i}] 用户名: {username}  UK: {uk}")
+                return
+            remove_account(sys.argv[2])
+            return
+        
+        elif cmd in ["help", "-h", "--help"]:
+            return
+    
+    # 1. 加载所有账号
+    accounts = load_all_accounts()
+    print(f"已加载 {len(accounts)} 个账号")
+    
+    # 2. 如果没有账号，引导登录
+    if not accounts:
+        print("\n暂无账号，开始添加新账号...")
+        add_new_account()
         return
-
-    # 4. 发送对话
-    print("等待回复...")
-    reply = send_chat(session, auth, chat_id, query_id, full_question)
-
-    # 5. 输出完整回复
-    if reply:
-        print(f"\n{'='*50}")
-        print(reply)
-        print(f"{'='*50}")
-    else:
-        print("[ERROR] 未获取到回复")
+    
+    # 3. 遍历所有账号执行保活
+    valid_accounts = []
+    for i, auth in enumerate(accounts, 1):
+        success, auth = process_account(auth, i, len(accounts))
+        if success:
+            valid_accounts.append(auth)
+        else:
+            # 如果账号失效，可以选择保留或移除
+            print(f"账号 UK:{auth.get('UK','')} 可能已失效，但仍保留在列表中")
+            valid_accounts.append(auth)
+        
+        # 账号之间间隔一段时间
+        if i < len(accounts):
+            wait_time = random.randint(3, 8)
+            print(f"等待 {wait_time} 秒后处理下一个账号...")
+            time.sleep(wait_time)
+    
+    # 4. 保存更新后的账号信息
+    save_all_accounts(valid_accounts)
+    print(f"\n保活完成！成功处理 {len(valid_accounts)} 个账号")
 
 
 if __name__ == "__main__":
